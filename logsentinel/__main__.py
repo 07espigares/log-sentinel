@@ -42,6 +42,16 @@ class Mode:
             self.renderers = {"text": to_text, "md": to_markdown, "json": to_json}
 
 
+def positive_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"tiene que ser un número entero mayor que 0: {text!r}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="logsentinel",
@@ -71,8 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="año de las líneas syslog, que no lo guardan (por defecto se deduce de la fecha actual)",
     )
-    p.add_argument("--threshold", type=int, default=10, help="fallos desde una IP para considerarlo fuerza bruta")
-    p.add_argument("--window", type=int, default=300, help="ventana de la fuerza bruta, en segundos")
+    p.add_argument(
+        "--threshold", type=positive_int, default=10, help="fallos desde una IP para considerarlo fuerza bruta"
+    )
+    p.add_argument("--window", type=positive_int, default=300, help="ventana de la fuerza bruta, en segundos")
     p.add_argument("--blocklist", type=Path, help="escribir aquí las IPs atacantes, una por línea")
     p.add_argument(
         "--allow",

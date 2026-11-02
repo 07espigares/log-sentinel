@@ -36,6 +36,8 @@ class Finding:
     user: str | None = None
     mitre: str | None = None
     details: str = ""
+    # IPs que participan en un ataque repartido entre muchas (ataque distribuido)
+    related_ips: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +51,7 @@ class Finding:
             "last_seen": self.last_seen.isoformat(),
             "mitre": self.mitre,
             "details": self.details,
+            "related_ips": list(self.related_ips),
         }
 
 
@@ -88,7 +91,9 @@ class Analysis:
     def offending_ips(self) -> list[str]:
         """IPs atacantes (para una lista de bloqueo). No incluye accesos legítimos de root."""
         rules = {"brute_force", "password_spraying", "user_enumeration", "success_after_failures"}
-        return sorted({f.ip for f in self.findings if f.ip and f.rule in rules})
+        ips = {f.ip for f in self.findings if f.ip and f.rule in rules}
+        ips.update(ip for f in self.findings if f.rule == "distributed_attack" for ip in f.related_ips)
+        return sorted(ips)
 
 
 def _max_in_window(times: list[datetime], window: timedelta) -> tuple[int, datetime, datetime]:
@@ -205,28 +210,31 @@ def detect_distributed_attack(events: list[AuthEvent], cfg: Config) -> list[Find
                     user=user,
                     mitre="T1110 Brute Force",
                     details=f"{len(fails)} fallos desde {len(ips)} IPs distintas (típico de una botnet)",
+                    related_ips=tuple(sorted(ips)),
                 )
             )
     return findings
 
 
 def detect_success_after_failures(events: list[AuthEvent], cfg: Config) -> list[Finding]:
-    failures_by_ip: Counter[str] = Counter()
-    first_failure: dict[str, datetime] = {}
+    # Por máquina y por IP: fallar en un servidor y entrar en otro no es una contraseña adivinada.
+    failures: Counter[tuple[str, str]] = Counter()
+    first_failure: dict[tuple[str, str], datetime] = {}
     findings = []
     for e in events:
+        key = (e.host, e.ip)
         if e.kind is EventKind.FAILED:
-            failures_by_ip[e.ip] += 1
-            first_failure.setdefault(e.ip, e.timestamp)
-        elif e.kind is EventKind.ACCEPTED and failures_by_ip[e.ip] >= cfg.failures_before_success:
+            failures[key] += 1
+            first_failure.setdefault(key, e.timestamp)
+        elif e.kind is EventKind.ACCEPTED and failures[key] >= cfg.failures_before_success:
             findings.append(
                 Finding(
                     Severity.CRITICAL,
                     "success_after_failures",
-                    f"Acceso correcto de '{e.user}' desde {e.ip} tras {failures_by_ip[e.ip]} fallos",
-                    first_failure[e.ip],
+                    f"Acceso correcto de '{e.user}' desde {e.ip} tras {failures[key]} fallos",
+                    first_failure[key],
                     e.timestamp,
-                    failures_by_ip[e.ip],
+                    failures[key],
                     ip=e.ip,
                     user=e.user,
                     mitre="T1078 Valid Accounts",
@@ -236,7 +244,8 @@ def detect_success_after_failures(events: list[AuthEvent], cfg: Config) -> list[
                     ),
                 )
             )
-            failures_by_ip[e.ip] = 0  # un solo aviso por racha de fallos
+            failures[key] = 0  # un solo aviso por racha de fallos
+            first_failure.pop(key, None)  # la racha siguiente empieza en su primer fallo
     return findings
 
 

@@ -101,7 +101,8 @@ def test_allowlist_is_respected(tmp_path, capsys):
     blocklist = tmp_path / "block.txt"
     main([str(SAMPLE), "--year", "2026", "--blocklist", str(blocklist), "--allow", "203.0.113.0/24"])
     capsys.readouterr()
-    assert blocklist.read_text().split() == ["192.0.2.200"]
+    # 192.0.2.10-16 son la botnet del ataque distribuido de la muestra
+    assert blocklist.read_text().split() == [f"192.0.2.{i}" for i in range(10, 17)] + ["192.0.2.200"]
 
 
 def test_clean_log_exits_zero(tmp_path, capsys):
@@ -123,3 +124,27 @@ def test_text_report_lists_every_finding(capsys):
 def test_missing_file_and_bad_cidr(tmp_path, capsys):
     assert main([str(tmp_path / "no-existe.log")]) == 2
     assert main([str(SAMPLE), "--allow", "no-es-una-red"]) == 2
+
+
+def test_second_compromise_starts_at_its_own_failures():
+    events = [fail(i, "root", "203.0.113.7") for i in range(3)] + [ok(60, "root", "203.0.113.7")]
+    events += [fail(3600 + i, "root", "203.0.113.7") for i in range(3)] + [ok(3660, "root", "203.0.113.7")]
+    found = [f for f in analyze(events).findings if f.rule == "success_after_failures"]
+    assert len(found) == 2
+    assert sorted(f.first_seen for f in found)[1] == T0 + timedelta(seconds=3600)
+
+
+def test_failures_on_one_host_and_success_on_another_are_not_a_compromise():
+    events = [
+        AuthEvent(T0 + timedelta(seconds=i), "web1", EventKind.FAILED, "root", "198.51.100.3", "password")
+        for i in range(3)
+    ]
+    events.append(AuthEvent(T0 + timedelta(seconds=30), "db1", EventKind.ACCEPTED, "root", "198.51.100.3", "publickey"))
+    assert "success_after_failures" not in rules(events)
+
+
+def test_distributed_attack_ips_go_to_the_blocklist():
+    ips = [f"203.0.113.{i}" for i in range(1, 6)]
+    analysis = analyze([fail(i, "admin", ip) for i, ip in enumerate(ips)])
+    assert "distributed_attack" in {f.rule for f in analysis.findings}
+    assert analysis.offending_ips() == sorted(ips)

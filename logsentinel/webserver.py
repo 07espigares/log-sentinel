@@ -122,6 +122,9 @@ SENSITIVE_PATHS = (
 LOG4J_LOOKUP = re.compile(r"\$\{(?:(?:lower|upper):|[a-z]*:[^:{}$]*:-)([^{}$]*)\}")
 
 
+LOG_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\[\"\\]")
+
+
 def _resolve_log4j_lookups(text: str) -> str:
     for _ in range(10):
         resolved = LOG4J_LOOKUP.sub(r"\1", text)
@@ -139,6 +142,8 @@ def normalize(text: str) -> str:
     - El '+' de la query string es un espacio: ?id=1+union+select.
     - Los comentarios SQL /**/ hacen de espacio: union/**/select.
     """
+    # nginx escribe los bytes raros y las comillas como \xHH y Apache como \" en el log.
+    text = LOG_ESCAPE.sub(lambda m: chr(int(m[1], 16)) if m[1] else m[0][1], text)
     for _ in range(3):
         decoded = unquote_plus(text)
         if decoded == text:
@@ -263,7 +268,9 @@ def _scanner_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
     findings = []
     for ip, evs in by_ip.items():
         # normalize() una vez por petición, no una vez por cada ruta sensible
-        sensitive = {e.path for e in evs if _is_sensitive(normalize(e.path))}
+        # (sin la query: /wp-admin?x=1 y ?x=2 son la misma ruta, y ?q=/.env no es pedir /.env)
+        paths = {normalize(e.path.split("?", 1)[0]) for e in evs}
+        sensitive = {p for p in paths if _is_sensitive(p)}
         not_found = {e.path for e in evs if e.status == 404}
         if len(sensitive) >= cfg.web_scanner_min_sensitive:
             sample = ", ".join(sorted(sensitive)[:5])
