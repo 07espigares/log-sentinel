@@ -20,7 +20,8 @@ from .detectors import Config, Finding, Severity
 from .parser import MONTHS
 
 LINE = re.compile(
-    r"^(?P<ip>[0-9a-fA-F.:]+) \S+ \S+ \[(?P<time>[^\]]+)\] "
+    # (?:host:puerto )? es el formato vhost_combined de Apache (other_vhosts_access.log)
+    r"^(?:\S+:\d+ )?(?P<ip>[0-9a-fA-F.:]+) \S+ \S+ \[(?P<time>[^\]]+)\] "
     r'"(?P<req>(?:[^"\\]|\\.)*)" (?P<status>\d{3}) (?P<size>\d+|-)'
     r'(?: "(?P<ref>(?:[^"\\]|\\.)*)" "(?P<ua>(?:[^"\\]|\\.)*)")?'
 )
@@ -116,6 +117,20 @@ SENSITIVE_PATHS = (
 )
 
 
+# Búsquedas de Log4j que sirven para ofuscar Log4Shell: ${lower:j}, ${upper:j}, ${::-j},
+# ${env:NO_EXISTE:-j}... Al resolverlas, "${${lower:j}ndi:" queda en "${jndi:".
+LOG4J_LOOKUP = re.compile(r"\$\{(?:(?:lower|upper):|[a-z]*:[^:{}$]*:-)([^{}$]*)\}")
+
+
+def _resolve_log4j_lookups(text: str) -> str:
+    for _ in range(10):
+        resolved = LOG4J_LOOKUP.sub(r"\1", text)
+        if resolved == text:
+            break
+        text = resolved
+    return text
+
+
 def normalize(text: str) -> str:
     """Deja la petición como la acabaría viendo la aplicación, para buscar firmas en ella.
 
@@ -130,6 +145,8 @@ def normalize(text: str) -> str:
             break
         text = decoded
     text = text.lower().replace("/**/", " ")
+    if "${" in text:
+        text = _resolve_log4j_lookups(text)
     return " ".join(text.split())
 
 
@@ -234,6 +251,10 @@ def _signature_findings(events: list[WebEvent]) -> list[Finding]:
     return findings
 
 
+def _is_sensitive(path: str) -> bool:
+    return any(s in path for s in SENSITIVE_PATHS)
+
+
 def _scanner_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
     by_ip: dict[str, list[WebEvent]] = defaultdict(list)
     for event in events:
@@ -241,7 +262,8 @@ def _scanner_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
 
     findings = []
     for ip, evs in by_ip.items():
-        sensitive = {e.path for e in evs if any(s in normalize(e.path) for s in SENSITIVE_PATHS)}
+        # normalize() una vez por petición, no una vez por cada ruta sensible
+        sensitive = {e.path for e in evs if _is_sensitive(normalize(e.path))}
         not_found = {e.path for e in evs if e.status == 404}
         if len(sensitive) >= cfg.web_scanner_min_sensitive:
             sample = ", ".join(sorted(sensitive)[:5])
