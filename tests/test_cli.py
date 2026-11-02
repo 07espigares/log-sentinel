@@ -195,3 +195,14 @@ def test_follow_keeps_going_if_a_notification_fails(tmp_path):
 def test_follow_rejects_stdin_gz_and_directories(tmp_path):
     for path in ["-", "x.log.gz", tmp_path]:
         assert run_follow(path, Mode(False), Config(), [], Severity.HIGH, "", io.StringIO()) == 2
+
+
+def test_invalid_window_is_a_usage_error(tmp_path, capsys):
+    import pytest
+
+    log = tmp_path / "auth.log"
+    log.write_text("Sep 25 10:00:01 srv sshd[1]: Failed password for root from 203.0.113.5 port 1 ssh2\n")
+    for bad in (["--window", "-1"], ["--window", "0"], ["--threshold", "0"]):
+        with pytest.raises(SystemExit) as exc:
+            main([str(log), *bad])
+        assert exc.value.code == 2

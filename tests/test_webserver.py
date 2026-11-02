@@ -161,3 +161,14 @@ def test_vhost_combined_format_is_parsed():
         'web.example:443 198.51.100.5 - - [25/Sep/2026:10:00:00 +0200] "GET /?id=1+union+select HTTP/1.1" 200 5 "-" "x"'
     )
     assert len(events) == 1 and events[0].ip == "198.51.100.5"
+
+
+def test_nginx_hex_escapes_are_decoded():
+    # nginx escribe las comillas de la petición como \x22 en el log.
+    assert "sqli" in rules_for(line("192.0.2.1", r"GET /?q=\x22+OR+\x221\x22=\x221 HTTP/1.1"))
+
+
+def test_query_strings_do_not_count_as_extra_sensitive_paths():
+    lines = [line("192.0.2.2", f"GET /wp-admin?x={i} HTTP/1.1", 404) for i in range(3)]
+    lines += [line("192.0.2.3", f"GET /search?q={p} HTTP/1.1") for p in ("/.env", "/.git/", "/wp-admin")]
+    assert "recon_scanner" not in rules_for(*lines)

@@ -153,3 +153,17 @@ def test_live_keeps_working_after_new_year():
     clock["now"] = datetime(2027, 1, 1, 0, 1)
     engine.feed([failed(datetime(2027, 1, 1, 0, 0, s), "203.0.113.9") for s in range(10)])
     assert [(f.rule, f.ip) for f in seen] == [("brute_force", "203.0.113.9")]
+
+
+def sqli(ts: datetime) -> str:
+    return f'192.0.2.66 - - [{ts:%d/%b/%Y:%H:%M:%S} +0000] "GET /?id=1+union+select+1 HTTP/1.1" 200 5 "-" "x"'
+
+
+def test_attack_that_comes_back_after_a_quiet_period_is_alerted_again():
+    from logsentinel.webserver import analyze_web, parse_web_lines
+
+    alerts = []
+    engine = LiveEngine(parse_web_lines, analyze_web, Config(), alerts.append)
+    engine.feed([sqli(T0)])
+    engine.feed([sqli(T0 + timedelta(hours=3))])  # nada entre medias: el primer ataque ya caducó
+    assert len(alerts) == 2
