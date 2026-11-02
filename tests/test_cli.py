@@ -247,3 +247,10 @@ def test_until_a_date_includes_that_whole_day():
 
     assert when_end("2026-09-25") == datetime(2026, 9, 25, 23, 59, 59, 999999)
     assert when_end("2026-09-25 10:30") == datetime(2026, 9, 25, 10, 30)
+
+
+def test_since_with_timezone_does_not_crash(tmp_path, capsys):
+    # Igual que el parser con las fechas ISO, se usa la hora tal como está escrita.
+    log = tmp_path / "auth.log"
+    log.write_text("Sep 25 10:00:01 srv sshd[1]: Failed password for root from 203.0.113.5 port 1 ssh2\n")
+    assert main([str(log), "--year", "2026", "--since", "2026-09-25T00:00:00+02:00"]) == 0
