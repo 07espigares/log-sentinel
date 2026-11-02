@@ -13,7 +13,7 @@ import argparse
 import ipaddress
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .ansi import clean, paint
@@ -52,6 +52,22 @@ def positive_int(text: str) -> int:
     return value
 
 
+def when(text: str) -> datetime:
+    """Fecha de --since/--until: AAAA-MM-DD o AAAA-MM-DD HH:MM[:SS]."""
+    try:
+        return datetime.fromisoformat(text.strip().replace("T", " "))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"fecha no válida {text!r}: usa AAAA-MM-DD o AAAA-MM-DD HH:MM") from None
+
+
+def when_end(text: str) -> datetime:
+    """Como when(), pero un día sin hora incluye el día entero: --until 2026-09-25."""
+    moment = when(text)
+    if len(text.strip()) == 10:
+        moment += timedelta(days=1, microseconds=-1)
+    return moment
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="logsentinel",
@@ -85,6 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--threshold", type=positive_int, default=10, help="fallos desde una IP para considerarlo fuerza bruta"
     )
     p.add_argument("--window", type=positive_int, default=300, help="ventana de la fuerza bruta, en segundos")
+    p.add_argument("--since", type=when, metavar="FECHA", help="analizar solo desde esta fecha (AAAA-MM-DD [HH:MM])")
+    p.add_argument("--until", type=when_end, metavar="FECHA", help="analizar solo hasta esta fecha (incluida)")
     p.add_argument("--blocklist", type=Path, help="escribir aquí las IPs atacantes, una por línea")
     p.add_argument(
         "--allow",
@@ -158,14 +176,31 @@ def run_follow(path, mode, cfg, notifiers, min_sev, host, out, from_start=False,
     return 0
 
 
+def _counted(lines, counter: list[int]):
+    for line in lines:
+        counter[0] += 1
+        yield line
+
+
+def _in_range(events, since, until):
+    return [e for e in events if (since is None or e.timestamp >= since) and (until is None or e.timestamp <= until)]
+
+
 def run_batch(args, mode, cfg, allowed) -> int:
     events = []
     for log in args.logs:
+        lines = [0]
         try:
-            events.extend(mode.parse(read_lines(log), args.year))
+            parsed = list(mode.parse(_counted(read_lines(log), lines), args.year))
         except OSError as exc:
             print(f"error: no se pudo leer {log}: {exc.strerror or exc}", file=sys.stderr)
             return 2
+        if lines[0] and not parsed:
+            # Si no, un log equivocado sale como «Sin hallazgos» y parece que todo va bien.
+            hint = "si es auth.log, quita --web" if mode.kind == "web" else "si es de nginx o Apache, usa --web"
+            print(f"aviso: ninguna de las {lines[0]} líneas de {log} se ha entendido ({hint})", file=sys.stderr)
+        events.extend(parsed)
+    events = _in_range(events, getattr(args, "since", None), getattr(args, "until", None))
 
     analysis = mode.analyze(events, cfg)
     source = ", ".join(args.logs)

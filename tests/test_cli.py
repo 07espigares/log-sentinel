@@ -206,3 +206,44 @@ def test_invalid_window_is_a_usage_error(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main([str(log), *bad])
         assert exc.value.code == 2
+
+
+def test_warns_when_no_line_is_understood(tmp_path, capsys):
+    # Sin este aviso, un log equivocado (p. ej. uno web sin --web) sale como «Sin hallazgos».
+    log = tmp_path / "access.log"
+    log.write_text('203.0.113.1 - - [25/Sep/2026:10:00:00 +0200] "GET / HTTP/1.1" 200 5 "-" "x"\n' * 3)
+    main([str(log)])
+    err = capsys.readouterr().err
+    assert "ninguna de las 3 líneas" in err and "--web" in err
+
+
+def test_since_and_until_limit_the_analysis(tmp_path, capsys):
+    log = tmp_path / "auth.log"
+    lines = [
+        f"Sep 25 10:00:{i:02d} srv sshd[1]: Failed password for root from 203.0.113.5 port 1 ssh2" for i in range(10)
+    ]
+    lines += [
+        f"Sep 27 10:00:{i:02d} srv sshd[1]: Failed password for root from 203.0.113.6 port 1 ssh2" for i in range(10)
+    ]
+    log.write_text("\n".join(lines) + "\n")
+    main([str(log), "--year", "2026", "--format", "json", "--since", "2026-09-26"])
+    report = json.loads(capsys.readouterr().out)
+    assert {f["ip"] for f in report["findings"]} == {"203.0.113.6"}
+    main([str(log), "--year", "2026", "--format", "json", "--until", "2026-09-25 23:59"])
+    report = json.loads(capsys.readouterr().out)
+    assert {f["ip"] for f in report["findings"]} == {"203.0.113.5"}
+
+
+def test_bad_since_date_is_a_usage_error(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["x.log", "--since", "ayer"])
+    assert exc.value.code == 2
+
+
+def test_until_a_date_includes_that_whole_day():
+    from logsentinel.__main__ import when_end
+
+    assert when_end("2026-09-25") == datetime(2026, 9, 25, 23, 59, 59, 999999)
+    assert when_end("2026-09-25 10:30") == datetime(2026, 9, 25, 10, 30)
