@@ -69,7 +69,11 @@ logsentinel auth.log --format json > informe.json   # para meterlo en otra herra
 logsentinel auth.log --blocklist bloquear.txt --allow 10.0.0.0/8   # IPs atacantes, sin las de tu red
 logsentinel auth.log auth.log.1 auth.log.2.gz       # varios ficheros, también los rotados
 journalctl -u ssh -o short-iso | logsentinel -      # desde la entrada estándar
+logsentinel auth.log --since 2026-09-25 --until "2026-09-26 08:00"   # solo un rango de fechas
 ```
+
+Si ninguna línea de un fichero se entiende, lo dice en vez de contestar «Sin hallazgos»
+(lo normal es haber pasado un log web sin `--web`, o al revés).
 
 Si encuentra algo de prioridad alta o crítica sale con código 1, así que se puede
 poner en cron y que solo moleste cuando hace falta:
@@ -120,7 +124,7 @@ Logs web (`--web`, formato combined de nginx/Apache):
 
 | Regla | Prioridad | Ejemplos | MITRE ATT&CK |
 |---|---|---|---|
-| `rce` | crítica | `;id`, `\|cat /etc/passwd`, `$(whoami)`, `${jndi:...}` (Log4Shell), Shellshock | T1190 |
+| `rce` | crítica | `;id`, `\|cat /etc/passwd`, `$(whoami)`, `${jndi:...}` (Log4Shell, también ofuscado como `${${lower:j}ndi:...}`), Shellshock | T1190 |
 | `sqli` | alta | `UNION SELECT`, `' OR '1'='1`, `SLEEP(` | T1190 |
 | `path_traversal` | alta | `../../etc/passwd`, `/proc/self/environ` | T1083 |
 | `xss` | media | `<script`, `onerror=`, `javascript:` | T1059.007 |
