@@ -82,3 +82,23 @@ def test_year_is_guessed_from_today_when_not_given():
 def test_windows_line_endings():
     events = parse("Sep 25 10:00:01 srv sshd[1]: Failed password for root from 192.0.2.1 port 1 ssh2\r\n")
     assert len(events) == 1 and events[0].ip == "192.0.2.1"
+
+
+def test_rsyslog_repeated_message_counts_every_attempt():
+    # Ubuntu trae "$RepeatedMsgReduction on": los fallos seguidos idénticos llegan en una sola línea.
+    events = parse(
+        "Oct 30 10:00:00 srv sshd[7]: Failed password for root from 203.0.113.5 port 22 ssh2",
+        "Oct 30 10:00:09 srv sshd[7]: message repeated 4 times: "
+        "[ Failed password for root from 203.0.113.5 port 22 ssh2]",
+    )
+    assert len(events) == 5
+    assert all(e.kind is EventKind.FAILED and e.ip == "203.0.113.5" for e in events)
+
+
+def test_repeated_message_with_absurd_count_is_capped():
+    # Un log manipulado no puede hacer que se creen mil millones de eventos en memoria.
+    events = parse(
+        "Oct 30 10:00:09 srv sshd[7]: message repeated 999999999 times: "
+        "[ Failed password for root from 203.0.113.5 port 22 ssh2]",
+    )
+    assert 1 <= len(events) <= 10_000

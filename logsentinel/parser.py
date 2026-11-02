@@ -35,6 +35,11 @@ FAILED = re.compile(
 )
 ACCEPTED = re.compile(r"^Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<ip>[0-9a-fA-F.:]+) port \d+")
 INVALID_USER = re.compile(r"^Invalid user (?P<user>\S*) from (?P<ip>[0-9a-fA-F.:]+)")
+# rsyslog con "$RepeatedMsgReduction on" (lo trae Ubuntu) junta los mensajes idénticos seguidos:
+#   message repeated 4 times: [ Failed password for root from 203.0.113.5 port 22 ssh2]
+REPEATED = re.compile(r"^message repeated (?P<n>\d{1,12}) times: \[ ?(?P<msg>.*?) ?\]$")
+# Tope de repeticiones por línea: un log manipulado no debe poder llenar la memoria.
+MAX_REPEAT = 10_000
 
 
 class EventKind(str, Enum):
@@ -122,9 +127,13 @@ def parse_lines(lines: Iterable[str], year: int | None = None, now: datetime | N
                 continue
         else:
             continue
-        event = parse_message(timestamp, m["host"], m["msg"])
+        msg, times = m["msg"], 1
+        if r := REPEATED.match(msg):
+            msg, times = r["msg"], min(int(r["n"]), MAX_REPEAT)
+        event = parse_message(timestamp, m["host"], msg)
         if event is not None:
-            yield event
+            for _ in range(times):
+                yield event
 
 
 def read_lines(path: Path | str) -> Iterator[str]:
