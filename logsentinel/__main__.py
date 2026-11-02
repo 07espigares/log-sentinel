@@ -55,9 +55,11 @@ def positive_int(text: str) -> int:
 def when(text: str) -> datetime:
     """Fecha de --since/--until: AAAA-MM-DD o AAAA-MM-DD HH:MM[:SS]."""
     try:
-        return datetime.fromisoformat(text.strip().replace("T", " "))
+        moment = datetime.fromisoformat(text.strip().replace("T", " "))
     except ValueError:
         raise argparse.ArgumentTypeError(f"fecha no válida {text!r}: usa AAAA-MM-DD o AAAA-MM-DD HH:MM") from None
+    # Como el parser con las fechas ISO: la hora tal como está escrita, sin zona.
+    return moment.replace(tzinfo=None)
 
 
 def when_end(text: str) -> datetime:
