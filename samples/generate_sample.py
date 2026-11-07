@@ -95,7 +95,30 @@ def main() -> None:
         log.failed(t, "backup", "203.0.113.99")
     log.accepted(t + timedelta(seconds=7), "backup", "203.0.113.99", "password")
 
-    # 6) Un administrador entra directamente como root (mala práctica, no un ataque).
+    # 6) Ya dentro, el intruso intenta hacerse root: sudo sin permiso y luego su.
+    t += timedelta(minutes=2)
+    log.other(t, "sudo:   backup : user NOT in sudoers ; TTY=pts/3 ; PWD=/var/backups ; USER=root ; COMMAND=/bin/bash")
+    for _ in range(3):
+        t += timedelta(seconds=rng.randint(4, 12))
+        log.other(t, f"su[{rng.randint(1000, 65000)}]: FAILED SU (to root) backup on pts/3")
+
+    # 7) Un escáner mira qué SSH hay en el puerto 22 sin intentar entrar.
+    t = t0 + timedelta(hours=7, minutes=20)
+    for _ in range(6):
+        t += timedelta(seconds=rng.randint(1, 4))
+        log.sshd(t, f"Did not receive identification string from 192.0.2.50 port {log.port()}")
+
+    # 8) Alguien deja una puerta trasera: una cuenta con UID 0 y otra en el grupo sudo.
+    t = t0 + timedelta(hours=12, minutes=30)
+    log.other(t, "useradd[31337]: new user: name=sysupdate, UID=0, GID=0, home=/root, shell=/bin/bash, from=/dev/pts/2")
+    log.other(t + timedelta(seconds=20), "usermod[31338]: add 'deploy' to group 'sudo'")
+    log.other(t + timedelta(seconds=20), "usermod[31338]: add 'deploy' to shadow group 'sudo'")
+
+    # Uso normal de sudo: no debe generar alertas.
+    apt = "sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt update"
+    log.other(t0 + timedelta(hours=5), apt)
+
+    # 9) Un administrador entra directamente como root (mala práctica, no un ataque).
     log.accepted(t0 + timedelta(hours=11, minutes=5), "root", "198.51.100.20")
 
     # Ruido habitual que el parser debe ignorar.

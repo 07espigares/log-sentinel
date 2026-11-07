@@ -64,6 +64,8 @@ class Config:
     enumeration_min_users: int = 5  # usuarios inexistentes distintos desde una IP
     distributed_min_ips: int = 5  # IPs distintas contra la misma cuenta
     failures_before_success: int = 3  # fallos previos que hacen sospechoso un acceso correcto
+    scan_min_probes: int = 5  # conexiones al puerto 22 sin intentar entrar, desde una IP
+    privilege_failures: int = 3  # contraseñas mal en sudo/su del mismo usuario
     # Logs web (ver webserver.py):
     web_scanner_min_sensitive: int = 3  # rutas sensibles distintas desde una IP -> escaneo
     web_scanner_min_404: int = 20  # rutas distintas con 404 desde una IP -> barrido
@@ -90,7 +92,7 @@ class Analysis:
 
     def offending_ips(self) -> list[str]:
         """IPs atacantes (para una lista de bloqueo). No incluye accesos legítimos de root."""
-        rules = {"brute_force", "password_spraying", "user_enumeration", "success_after_failures"}
+        rules = {"brute_force", "password_spraying", "user_enumeration", "success_after_failures", "ssh_scan"}
         ips = {f.ip for f in self.findings if f.ip and f.rule in rules}
         ips.update(ip for f in self.findings if f.rule == "distributed_attack" for ip in f.related_ips)
         return sorted(ips)
@@ -271,6 +273,134 @@ def detect_root_login(events: list[AuthEvent], cfg: Config) -> list[Finding]:
     ]
 
 
+def detect_ssh_scan(events: list[AuthEvent], cfg: Config) -> list[Finding]:
+    by_ip: dict[str, list[AuthEvent]] = defaultdict(list)
+    for e in events:
+        if e.kind is EventKind.PROBE:
+            by_ip[e.ip].append(e)
+    return [
+        Finding(
+            Severity.LOW,
+            "ssh_scan",
+            f"Escaneo del puerto de SSH desde {ip}",
+            evs[0].timestamp,
+            evs[-1].timestamp,
+            len(evs),
+            ip=ip,
+            mitre="T1046 Network Service Discovery",
+            details=(
+                f"{len(evs)} conexiones que no llegaron a intentar entrar (sin saludo SSH o con cifrados "
+                "antiguos): alguien está mirando qué versión de SSH tienes"
+            ),
+        )
+        for ip, evs in by_ip.items()
+        if len(evs) >= cfg.scan_min_probes
+    ]
+
+
+def _by_host_and_user(events: list[AuthEvent], kinds: set[EventKind]) -> dict[tuple[str, str], list[AuthEvent]]:
+    grouped: dict[tuple[str, str], list[AuthEvent]] = defaultdict(list)
+    for e in events:
+        if e.kind in kinds:
+            grouped[(e.host, e.user)].append(e)
+    return grouped
+
+
+def detect_sudo_denied(events: list[AuthEvent], cfg: Config) -> list[Finding]:
+    findings = []
+    for (_, user), evs in _by_host_and_user(events, {EventKind.SUDO_DENIED}).items():
+        last = evs[-1].extra or "(sin orden)"
+        findings.append(
+            Finding(
+                Severity.MEDIUM,
+                "sudo_denied",
+                f"'{user}' intentó usar sudo sin tener permiso",
+                evs[0].timestamp,
+                evs[-1].timestamp,
+                len(evs),
+                user=user,
+                mitre="T1548.003 Sudo and Sudo Caching",
+                details=(
+                    f"{len(evs)} intento(s); la última orden fue {last[:80]}. Si nadie lo esperaba, "
+                    "puede ser una cuenta robada buscando cómo ser root"
+                ),
+            )
+        )
+    return findings
+
+
+def detect_privilege_guessing(events: list[AuthEvent], cfg: Config) -> list[Finding]:
+    findings = []
+    for (_, user), evs in _by_host_and_user(events, {EventKind.SUDO_FAILED}).items():
+        total = sum(e.count for e in evs)
+        if total >= cfg.privilege_failures:
+            findings.append(
+                Finding(
+                    Severity.MEDIUM,
+                    "privilege_guessing",
+                    f"'{user}' falló {total} veces la contraseña de sudo o su",
+                    evs[0].timestamp,
+                    evs[-1].timestamp,
+                    total,
+                    user=user,
+                    mitre="T1548.003 Sudo and Sudo Caching",
+                    details="alguien con una sesión abierta está probando contraseñas para hacerse root",
+                )
+            )
+    return findings
+
+
+def detect_account_created(events: list[AuthEvent], cfg: Config) -> list[Finding]:
+    findings = []
+    for e in events:
+        if e.kind is not EventKind.ACCOUNT_CREATED:
+            continue
+        root_clone = e.extra == "UID=0"
+        findings.append(
+            Finding(
+                Severity.CRITICAL if root_clone else Severity.MEDIUM,
+                "account_created",
+                f"Cuenta nueva '{e.user}'" + (" con UID 0 (otro root)" if root_clone else ""),
+                e.timestamp,
+                e.timestamp,
+                1,
+                user=e.user,
+                mitre="T1136.001 Create Account",
+                details=(
+                    "una cuenta con UID 0 tiene todos los permisos de root: es una puerta trasera típica"
+                    if root_clone
+                    else "comprueba que la creó alguien de confianza: crear cuentas es una forma de quedarse dentro"
+                ),
+            )
+        )
+    return findings
+
+
+# Grupos que dan root, directa o indirectamente (docker y lxd montan / dentro de un contenedor).
+ADMIN_GROUPS = {"sudo", "wheel", "admin", "root", "docker", "lxd"}
+
+
+def detect_admin_group(events: list[AuthEvent], cfg: Config) -> list[Finding]:
+    seen: dict[tuple[str, str, str], AuthEvent] = {}
+    for e in events:
+        if e.kind is EventKind.GROUP_ADDED and e.extra in ADMIN_GROUPS:
+            seen.setdefault((e.host, e.user, e.extra), e)
+    return [
+        Finding(
+            Severity.HIGH,
+            "admin_group",
+            f"'{user}' añadido al grupo de administradores '{group}'",
+            e.timestamp,
+            e.timestamp,
+            1,
+            user=user,
+            mitre="T1098 Account Manipulation",
+            details=f"desde ahora '{user}' puede hacerse root; comprueba que era un cambio previsto",
+        )
+        for (_, user, group), e in seen.items()
+    ]
+
+
 DETECTORS = [
     detect_success_after_failures,
     detect_distributed_attack,
@@ -278,6 +408,11 @@ DETECTORS = [
     detect_password_spraying,
     detect_root_login,
     detect_user_enumeration,
+    detect_ssh_scan,
+    detect_sudo_denied,
+    detect_privilege_guessing,
+    detect_account_created,
+    detect_admin_group,
 ]
 
 
