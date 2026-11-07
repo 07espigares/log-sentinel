@@ -3,7 +3,9 @@
     198.51.100.9 - - [25/Sep/2026:10:15:32 +0200] "GET /?id=1 HTTP/1.1" 200 512 "-" "curl/8"
 
 Busca cargas de ataque en las peticiones (inyección SQL, path traversal, ejecución de
-comandos, XSS) y escaneos de rutas. Devuelve los mismos `Finding` que el análisis de
+comandos, XSS, SSRF, inclusión de ficheros, inyección de plantillas, webshells),
+herramientas de ataque por su User-Agent, fuerza bruta contra formularios de login y
+escaneos de rutas. Devuelve los mismos `Finding` que el análisis de
 SSH, así que los informes, el panel y los avisos sirven para los dos.
 """
 
@@ -16,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import unquote_plus
 
-from .detectors import Config, Finding, Severity
+from .detectors import Config, Finding, Severity, _max_in_window
 from .parser import MONTHS
 
 LINE = re.compile(
@@ -30,6 +32,28 @@ TIME = re.compile(r"(\d{2})/([A-Z][a-z]{2})/(\d{4}):(\d{2}):(\d{2}):(\d{2})")
 # ;id  |cat /etc/passwd  $(whoami)  `uname -a`  && wget ...
 CMD_INJECTION = re.compile(
     r"(?:[;|`]|&&|\$\()\s*(?:id|whoami|uname|cat|ls|pwd|wget|curl|nc|ncat|bash|sh|python[0-9.]*|perl|sleep|ping)\b"
+)
+
+
+# /uploads/c99.php, /wso.php... o cualquier .php/.jsp/.asp que recibe ?cmd= o ?exec=
+WEBSHELL = re.compile(
+    r"/(?:c99|r57|wso|b374k|alfa|webshell|sh3ll|shell)[\w.-]*\.(?:php\d?|phtml|jspx?|aspx?)\b"
+    r"|\.(?:php\d?|phtml|jspx?|aspx?)\?(?:[^ ]*&)?(?:cmd|exec|command|execute)="
+)
+# {{7*7}}, ${7*7}, #{7*7}: la prueba de siempre para ver si la plantilla evalúa lo que mandas
+SSTI = re.compile(r"(?:\{\{|\$\{|#\{)\s*\d+\s*[*+]\s*\d+\s*\}|\{\{\s*(?:config|self|request)\b")
+
+# Herramientas de ataque que se anuncian en el User-Agent. Un atacante cuidadoso lo cambia,
+# pero muchos escaneos automáticos no se molestan.
+SCANNER_TOOLS = (
+    "sqlmap", "nikto", "nmap", "masscan", "zgrab", "nuclei", "wpscan", "dirbuster", "gobuster",
+    "feroxbuster", "ffuf", "fuzz faster", "wfuzz", "acunetix", "nessus", "openvas", "jaeles",
+    "hydra", "netsparker", "arachni", "whatweb", "commix",
+)  # fmt: skip
+# Formularios de login a los que apuntan los ataques de fuerza bruta web.
+LOGIN_PATHS = re.compile(
+    r"^/(?:wp-login\.php|xmlrpc\.php|login|signin|sign-in|user/login|users/sign_in|admin/login|"
+    r"administrator/index\.php|api/(?:v\d+/)?(?:auth|login)|auth/login|session)(?:[/?.]|$)"
 )
 
 
@@ -80,8 +104,36 @@ SIGNATURES = {
         Severity.CRITICAL,
         "Intento de ejecución de comandos",
         "T1190 Exploit Public-Facing Application",
-        ("${jndi:", "() {", "/bin/sh", "/bin/bash", "nc -e", "cmd.exe", "powershell"),
+        # class.module.classloader es Spring4Shell (CVE-2022-22965)
+        ("${jndi:", "() {", "/bin/sh", "/bin/bash", "nc -e", "cmd.exe", "powershell", "class.module.classloader"),
         CMD_INJECTION,
+    ),
+    "webshell": Signature(
+        Severity.CRITICAL,
+        "Uso de una webshell",
+        "T1505.003 Web Shell",
+        (),
+        WEBSHELL,
+    ),
+    "ssrf": Signature(
+        Severity.HIGH,
+        "SSRF (el servidor pide URLs por el atacante)",
+        "T1190 Exploit Public-Facing Application",
+        # 169.254.169.254 y metadata.google.internal dan las credenciales de la nube
+        ("169.254.169.254", "metadata.google.internal", "100.100.100.200", "gopher://", "dict://", "file:///"),
+    ),
+    "file_inclusion": Signature(
+        Severity.HIGH,
+        "Inclusión de ficheros (LFI con envoltorios de PHP)",
+        "T1190 Exploit Public-Facing Application",
+        ("php://filter", "php://input", "data://text", "expect://", "phar://", "zip://"),
+    ),
+    "ssti": Signature(
+        Severity.HIGH,
+        "Inyección de plantillas (SSTI)",
+        "T1190 Exploit Public-Facing Application",
+        ("__class__", "__globals__", "__builtins__", "__subclasses__", "<%=", "{{config", "{{self", "{{request"),
+        SSTI,
     ),
     "xss": Signature(
         Severity.MEDIUM,
@@ -240,6 +292,9 @@ def _signature_findings(events: list[WebEvent]) -> list[Finding]:
     for (ip, rule), matches in hits.items():
         sig = SIGNATURES[rule]
         first, example = matches[0]
+        # Un 200 no prueba que el ataque funcionara, pero es lo primero que hay que mirar.
+        ok = sum(1 for event, _ in matches if 200 <= event.status < 300)
+        answered = f" {ok} respondida{'s' if ok != 1 else ''} con 200: revisa esas primero." if ok else ""
         findings.append(
             Finding(
                 sig.severity,
@@ -250,9 +305,65 @@ def _signature_findings(events: list[WebEvent]) -> list[Finding]:
                 len(matches),
                 ip=ip,
                 mitre=sig.mitre,
-                details=f"{len(matches)} petición(es) sospechosa(s). Ejemplo: {example[:100]}",
+                details=f"{len(matches)} petición(es) sospechosa(s). Ejemplo: {example[:100]}.{answered}",
             )
         )
+    return findings
+
+
+def _tool_findings(events: list[WebEvent]) -> list[Finding]:
+    by_ip: dict[str, list[tuple[WebEvent, str]]] = defaultdict(list)
+    for event in events:
+        ua = event.user_agent.lower()
+        tool = next((t for t in SCANNER_TOOLS if t in ua), None)
+        if tool:
+            by_ip[event.ip].append((event, tool))
+    findings = []
+    for ip, hits in by_ip.items():
+        tools = sorted({tool for _, tool in hits})
+        findings.append(
+            Finding(
+                Severity.MEDIUM,
+                "scanner_tool",
+                f"Herramienta de ataque ({', '.join(tools)}) desde {ip}",
+                hits[0][0].timestamp,
+                hits[-1][0].timestamp,
+                len(hits),
+                ip=ip,
+                mitre="T1595.002 Vulnerability Scanning",
+                details=f"{len(hits)} petición(es) con el User-Agent de {', '.join(tools)}",
+            )
+        )
+    return findings
+
+
+def _login_bruteforce_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
+    by_ip: dict[str, list[WebEvent]] = defaultdict(list)
+    for event in events:
+        if event.method == "POST" and LOGIN_PATHS.match(event.path.lower()):
+            by_ip[event.ip].append(event)
+    findings = []
+    for ip, posts in by_ip.items():
+        count, start, end = _max_in_window([e.timestamp for e in posts], cfg.window)
+        if count >= cfg.brute_force_threshold:
+            paths = Counter(e.path.split("?", 1)[0] for e in posts)
+            target, _ = paths.most_common(1)[0]
+            findings.append(
+                Finding(
+                    Severity.MEDIUM,
+                    "web_login_bruteforce",
+                    f"Fuerza bruta contra {target} desde {ip}",
+                    start,
+                    end,
+                    count,
+                    ip=ip,
+                    mitre="T1110.001 Password Guessing",
+                    details=(
+                        f"{count} intentos de login en {int(cfg.window.total_seconds() // 60)} min "
+                        f"({len(posts)} en total). WordPress responde 200 aunque la contraseña esté mal"
+                    ),
+                )
+            )
     return findings
 
 
@@ -310,5 +421,7 @@ def analyze_web(events: list[WebEvent], cfg: Config | None = None) -> WebAnalysi
     result = WebAnalysis(events)
     result.findings.extend(_signature_findings(events))
     result.findings.extend(_scanner_findings(events, cfg))
+    result.findings.extend(_tool_findings(events))
+    result.findings.extend(_login_bruteforce_findings(events, cfg))
     result.findings.sort(key=lambda f: (-f.severity, f.first_seen))
     return result
