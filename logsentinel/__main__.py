@@ -21,7 +21,7 @@ from .dashboard import dashboard_from
 from .detectors import Config, Finding, Severity, analyze
 from .follow import Tailer
 from .live import LiveEngine
-from .notifier import NotifyError, build_notifier
+from .notifier import NotifyError, build_notifier, deliver
 from .parser import parse_lines, read_lines
 from .report import INDENT, severity_tag, to_json, to_markdown, to_text, web_to_json, web_to_markdown, web_to_text
 from .webserver import analyze_web, parse_web_lines
@@ -148,7 +148,7 @@ def _emit(finding: Finding, notifiers, min_sev: Severity, host: str, out) -> Non
         return
     for notifier in notifiers:
         try:
-            notifier.send(finding, host)
+            deliver(notifier, finding, host)
         except NotifyError as exc:
             # Si Telegram está caído no quiero que se pare la vigilancia: se avisa y se sigue.
             print(paint(f"{' ' * 9}{INDENT}(no se pudo avisar por {notifier.name}: {exc})", "yellow"), file=out)

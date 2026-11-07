@@ -20,7 +20,7 @@ import re
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from enum import Enum
 from pathlib import Path
 
@@ -98,15 +98,25 @@ class AuthEvent:
     count: int = 1  # sudo junta varios intentos fallidos en una sola línea
 
 
-def _parse_iso(ts: str) -> datetime:
+def _parse_iso_aware(ts: str) -> datetime:
+    """La fecha ISO con su huso. Lanza ValueError si no se entiende."""
     ts = ts.replace("Z", "+00:00")
     # Python 3.10 no entiende "+0200" (sin los dos puntos) ni un número de decimales
     # distinto de 3 o 6, así que lo normalizo antes de llamar a fromisoformat.
     if re.search(r"[+-]\d{4}$", ts):
         ts = f"{ts[:-2]}:{ts[-2:]}"
     ts = re.sub(r"\.(\d+)", lambda m: "." + m.group(1)[:6].ljust(6, "0"), ts)
-    # Me quedo con la hora local del servidor, igual que en el formato syslog.
-    return datetime.fromisoformat(ts).replace(tzinfo=None)
+    return datetime.fromisoformat(ts)
+
+
+def _parse_iso(ts: str, reference: tzinfo | None = None) -> datetime:
+    # Me quedo con la hora local del servidor, igual que en el formato syslog. Si el log mezcla
+    # husos (el cambio de hora de octubre, o un trozo en UTC), todo se pasa al de la primera
+    # línea: si no, 02:01+01:00 quedaría antes que 02:59+02:00 y el orden real se perdería.
+    moment = _parse_iso_aware(ts)
+    if reference is not None and moment.tzinfo is not None:
+        moment = moment.astimezone(reference)
+    return moment.replace(tzinfo=None)
 
 
 def _date(year: int, month: int, day: int, hms: str) -> datetime | None:
@@ -182,6 +192,7 @@ def parse_lines(lines: Iterable[str], year: int | None = None, now: datetime | N
     """
     now = now or datetime.now()
     previous_month = None
+    reference: tzinfo | None = None  # el huso de la primera línea ISO
     for line in lines:
         line = line.rstrip("\r\n")
         if m := SYSLOG_LINE.match(line):
@@ -202,7 +213,9 @@ def parse_lines(lines: Iterable[str], year: int | None = None, now: datetime | N
                 continue
         elif m := ISO_LINE.match(line):
             try:
-                timestamp = _parse_iso(m["ts"])
+                timestamp = _parse_iso(m["ts"], reference)
+                if reference is None:
+                    reference = _parse_iso_aware(m["ts"]).tzinfo
             except ValueError:
                 continue
         else:

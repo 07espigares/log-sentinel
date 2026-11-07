@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -28,7 +29,11 @@ ICON = {Severity.CRITICAL: "🔴", Severity.HIGH: "🟠", Severity.MEDIUM: "🟡
 
 
 class NotifyError(Exception):
-    pass
+    def __init__(self, message: str, retryable: bool = False) -> None:
+        super().__init__(message)
+        # Merece la pena volver a probar si es algo pasajero (sin conexión, el servidor
+        # caído o «demasiados mensajes»), no si el token o la URL están mal.
+        self.retryable = retryable
 
 
 def format_message(finding: Finding, host: str = "") -> str:
@@ -50,12 +55,34 @@ def _post(url: str, payload: dict, opener: Callable, timeout: float) -> None:
         with opener(request, timeout=timeout) as response:
             response.read()
     except urllib.error.HTTPError as exc:
-        raise NotifyError(f"el servidor respondió {exc.code} {exc.reason}") from exc
+        retryable = exc.code == 429 or exc.code >= 500
+        raise NotifyError(f"el servidor respondió {exc.code} {exc.reason}", retryable) from exc
     except urllib.error.URLError as exc:
         # Ojo con meter la URL en el mensaje: en Discord la propia URL es la contraseña.
-        raise NotifyError(f"no se pudo conectar ({exc.reason})") from exc
-    except (OSError, ValueError) as exc:
+        raise NotifyError(f"no se pudo conectar ({exc.reason})", retryable=True) from exc
+    except OSError as exc:
+        raise NotifyError(f"no se pudo enviar ({type(exc).__name__})", retryable=True) from exc
+    except ValueError as exc:
         raise NotifyError(f"no se pudo enviar ({type(exc).__name__})") from exc
+
+
+RETRY_DELAYS = (2, 5)  # segundos entre el primer intento y el segundo, y entre el segundo y el tercero
+
+
+def deliver(notifier, finding: Finding, host: str = "", wait: Callable[[float], None] = time.sleep) -> None:
+    """Manda el aviso y, si falla por algo pasajero, lo vuelve a intentar dos veces más.
+
+    Antes un corte de la wifi de unos segundos y el aviso de un ataque se perdía. Si al
+    final no se puede, lanza el último NotifyError: quien llama lo enseña y sigue vigilando.
+    """
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        try:
+            notifier.send(finding, host)
+            return
+        except NotifyError as exc:
+            if not exc.retryable or attempt == len(RETRY_DELAYS):
+                raise
+            wait(RETRY_DELAYS[attempt])
 
 
 @dataclass
