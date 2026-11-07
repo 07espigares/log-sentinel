@@ -134,12 +134,21 @@ Logs web (`--web`, formato combined de nginx/Apache):
 
 | Regla | Prioridad | Ejemplos | MITRE ATT&CK |
 |---|---|---|---|
-| `rce` | crítica | `;id`, `\|cat /etc/passwd`, `$(whoami)`, `${jndi:...}` (Log4Shell, también ofuscado como `${${lower:j}ndi:...}`), Shellshock | T1190 |
+| `rce` | crítica | `;id`, `\|cat /etc/passwd`, `$(whoami)`, `${jndi:...}` (Log4Shell, también ofuscado como `${${lower:j}ndi:...}`), Shellshock, Spring4Shell | T1190 |
+| `webshell` | crítica | `/uploads/c99.php`, `wso.php`, cualquier `.php?cmd=` | T1505.003 |
+| `ssrf` | alta | `?url=http://169.254.169.254/...` (credenciales de la nube), `gopher://` | T1190 |
+| `file_inclusion` | alta | `php://filter`, `data://text`, `expect://` | T1190 |
+| `ssti` | alta | `{{7*7}}`, `${7*7}`, `{{config}}`, `__class__` | T1190 |
 | `sqli` | alta | `UNION SELECT`, `' OR '1'='1`, `SLEEP(` | T1190 |
 | `path_traversal` | alta | `../../etc/passwd`, `/proc/self/environ` | T1083 |
 | `xss` | media | `<script`, `onerror=`, `javascript:` | T1059.007 |
 | `recon_scanner` | media | pide 3 rutas o más del tipo `/.env`, `/.git/`, `/wp-admin` | T1595.003 |
+| `scanner_tool` | media | el User-Agent es de sqlmap, Nikto, Nuclei, WPScan, gobuster, ffuf... | T1595.002 |
+| `web_login_bruteforce` | media | 10 POST o más a `/wp-login.php`, `/xmlrpc.php`, `/login`... en 5 minutos | T1110.001 |
 | `path_bruteforce` | baja | 20 rutas distintas o más que dan 404 | T1595 |
+
+En los ataques web, el detalle dice cuántas peticiones respondió el servidor con un
+200: no prueba que el ataque funcionara, pero son las primeras que hay que mirar.
 
 Los umbrales de la fuerza bruta se cambian con `--threshold` y `--window`; el resto
 están en `Config`, en `detectors.py`.

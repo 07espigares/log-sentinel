@@ -133,7 +133,17 @@ def test_sample_log_end_to_end():
     events = list(parse_web_lines(SAMPLE.read_text().splitlines()))
     analysis = analyze_web(events)
     rules = {f.rule for f in analysis.findings}
-    assert rules == {"rce", "sqli", "path_traversal", "recon_scanner", "path_bruteforce"}
+    assert rules == {
+        "rce",
+        "sqli",
+        "path_traversal",
+        "recon_scanner",
+        "path_bruteforce",
+        "scanner_tool",
+        "web_login_bruteforce",
+        "ssrf",
+        "webshell",
+    }
     assert len(events) > 200
     by_ip = {(f.ip, f.rule): f for f in analysis.findings}
     assert by_ip[("203.0.113.88", "path_traversal")].count == 4  # incluida la de doble codificación
@@ -172,3 +182,103 @@ def test_query_strings_do_not_count_as_extra_sensitive_paths():
     lines = [line("192.0.2.2", f"GET /wp-admin?x={i} HTTP/1.1", 404) for i in range(3)]
     lines += [line("192.0.2.3", f"GET /search?q={p} HTTP/1.1") for p in ("/.env", "/.git/", "/wp-admin")]
     assert "recon_scanner" not in rules_for(*lines)
+
+
+# --- etiquetas nuevas (nov. 2026) --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "request_line",
+    [
+        "GET /fetch?url=http://169.254.169.254/latest/meta-data/iam/ HTTP/1.1",
+        "GET /proxy?u=http%3A%2F%2Fmetadata.google.internal%2F HTTP/1.1",
+        "GET /img?src=gopher://127.0.0.1:6379/_FLUSHALL HTTP/1.1",
+    ],
+)
+def test_ssrf(request_line):
+    assert "ssrf" in rules_for(line("203.0.113.8", request_line))
+
+
+@pytest.mark.parametrize(
+    "request_line",
+    [
+        "GET /index.php?page=php://filter/convert.base64-encode/resource=config HTTP/1.1",
+        "GET /index.php?file=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWzFdKTs/Pg== HTTP/1.1",
+        "GET /index.php?page=expect://id HTTP/1.1",
+    ],
+)
+def test_file_inclusion(request_line):
+    assert "file_inclusion" in rules_for(line("203.0.113.8", request_line))
+
+
+@pytest.mark.parametrize(
+    "request_line",
+    [
+        "GET /hello?name={{7*7}} HTTP/1.1",
+        "GET /hello?name=%7B%7B%20config.items()%20%7D%7D HTTP/1.1",
+        "GET /hello?name={{''.__class__.__mro__[1].__subclasses__()}} HTTP/1.1",
+        "GET /hello?name=${7*7} HTTP/1.1",
+    ],
+)
+def test_template_injection(request_line):
+    assert "ssti" in rules_for(line("203.0.113.8", request_line))
+
+
+@pytest.mark.parametrize(
+    "request_line",
+    [
+        "GET /uploads/c99.php HTTP/1.1",
+        "POST /wp-content/uploads/2026/09/wso.php HTTP/1.1",
+        "GET /images/x.php?cmd=whoami HTTP/1.1",
+    ],
+)
+def test_webshell(request_line):
+    found = analyze_web(parse(line("203.0.113.8", request_line))).findings
+    shell = [f for f in found if f.rule == "webshell"]
+    assert shell and shell[0].severity is Severity.CRITICAL and shell[0].mitre.startswith("T1505.003")
+
+
+@pytest.mark.parametrize(
+    "ua", ["sqlmap/1.8#stable (https://sqlmap.org)", "Mozilla/5.00 (Nikto/2.5.0)", "Nuclei - Open-source"]
+)
+def test_scanner_tools_by_user_agent(ua):
+    found = analyze_web(parse(line("203.0.113.8", "GET / HTTP/1.1", ua=ua))).findings
+    (tool,) = [f for f in found if f.rule == "scanner_tool"]
+    assert tool.mitre.startswith("T1595.002")
+
+
+def test_web_login_bruteforce():
+    lines = [line("203.0.113.8", "POST /wp-login.php HTTP/1.1", 200) for _ in range(12)]
+    (finding,) = [f for f in analyze_web(parse(*lines)).findings if f.rule == "web_login_bruteforce"]
+    assert finding.count == 12 and finding.mitre.startswith("T1110")
+
+
+def test_a_few_logins_are_not_bruteforce():
+    lines = [line("198.51.100.5", "POST /login HTTP/1.1", 302) for _ in range(3)]
+    assert "web_login_bruteforce" not in rules_for(*lines)
+
+
+def test_normal_requests_get_no_new_labels():
+    found = rules_for(
+        line("198.51.100.5", "GET /blog/2026/09/hola-mundo HTTP/1.1"),
+        line("198.51.100.5", "GET /search?q=como+configurar+php HTTP/1.1"),
+        line("198.51.100.5", "GET /img/logo.png HTTP/1.1", ua="Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0"),
+        line("198.51.100.5", "POST /contacto HTTP/1.1"),
+    )
+    assert found == set()
+
+
+def test_details_say_how_many_attacks_got_a_200():
+    found = analyze_web(
+        parse(
+            line("203.0.113.8", "GET /item?id=1+union+select+1,2 HTTP/1.1", 200),
+            line("203.0.113.8", "GET /item?id=2+union+select+1,2 HTTP/1.1", 500),
+        )
+    ).findings
+    (sqli,) = [f for f in found if f.rule == "sqli"]
+    assert "1 respondida con 200" in sqli.details
+
+
+def test_spring4shell_is_rce():
+    req = "POST /app?class.module.classLoader.resources.context.parent.pipeline.first.pattern=x HTTP/1.1"
+    assert "rce" in rules_for(line("203.0.113.8", req))
