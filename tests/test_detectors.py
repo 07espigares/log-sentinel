@@ -91,6 +91,11 @@ def test_sample_log_end_to_end(tmp_path, capsys):
         "password_spraying",
         "root_login",
         "user_enumeration",
+        "ssh_scan",
+        "sudo_denied",
+        "privilege_guessing",
+        "account_created",
+        "admin_group",
     }
     blocked = blocklist.read_text().split()
     assert "203.0.113.99" in blocked and "203.0.113.45" in blocked
@@ -101,8 +106,9 @@ def test_allowlist_is_respected(tmp_path, capsys):
     blocklist = tmp_path / "block.txt"
     main([str(SAMPLE), "--year", "2026", "--blocklist", str(blocklist), "--allow", "203.0.113.0/24"])
     capsys.readouterr()
-    # 192.0.2.10-16 son la botnet del ataque distribuido de la muestra
-    assert blocklist.read_text().split() == [f"192.0.2.{i}" for i in range(10, 17)] + ["192.0.2.200"]
+    # 192.0.2.10-16 son la botnet del ataque distribuido de la muestra y 192.0.2.50, el escáner
+    expected = [f"192.0.2.{i}" for i in range(10, 17)] + ["192.0.2.200", "192.0.2.50"]
+    assert blocklist.read_text().split() == expected
 
 
 def test_clean_log_exits_zero(tmp_path, capsys):
@@ -117,7 +123,8 @@ def test_clean_log_exits_zero(tmp_path, capsys):
 def test_text_report_lists_every_finding(capsys):
     assert main([str(SAMPLE), "--year", "2026"]) == 1
     out = capsys.readouterr().out
-    assert out.count("CRÍTICA") == 1 and "T1110.003 Password Spraying" in out
+    # el acceso tras los fallos y la cuenta con UID 0
+    assert out.count("CRÍTICA") == 2 and "T1110.003 Password Spraying" in out
     assert "IPs con más fallos:" in out
 
 

@@ -1,11 +1,11 @@
 Sep 25 06:00:00 srv-web01 sshd[57054]: Accepted publickey for deploy from 198.51.100.12 port 35382 ssh2: ED25519 SHA256:d3gdc2OPacgQP21LMh63eLhf3ckjjhbMd7chQ6jfb03
 Sep 25 06:00:00 srv-web01 sshd[16256]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
 Sep 25 06:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 06:00:30 srv-web01 sshd[51910]: Connection closed by 203.0.113.45 port 43397 [preauth]
+Sep 25 06:00:30 srv-web01 sshd[39871]: Connection closed by 203.0.113.45 port 55000 [preauth]
 Sep 25 06:47:00 srv-web01 sshd[8185]: Accepted publickey for alice from 198.51.100.10 port 60984 ssh2: ED25519 SHA256:kM5ej111b0OgMh71fi3b54kb7P2fN60dd3O3LPj9dN3
 Sep 25 06:47:00 srv-web01 sshd[11016]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 07:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 07:00:30 srv-web01 sshd[40074]: Connection closed by 203.0.113.45 port 51366 [preauth]
+Sep 25 07:00:30 srv-web01 sshd[35533]: Connection closed by 203.0.113.45 port 48713 [preauth]
 Sep 25 07:15:02 srv-web01 sshd[11902]: Failed password for root from 203.0.113.45 port 47306 ssh2
 Sep 25 07:15:06 srv-web01 sshd[4014]: Failed password for root from 203.0.113.45 port 33716 ssh2
 Sep 25 07:15:10 srv-web01 sshd[4677]: Failed password for root from 203.0.113.45 port 58856 ssh2
@@ -49,7 +49,7 @@ Sep 25 07:17:40 srv-web01 sshd[33885]: Failed password for root from 203.0.113.4
 Sep 25 07:34:00 srv-web01 sshd[32849]: Accepted publickey for deploy from 198.51.100.12 port 56751 ssh2: ED25519 SHA256:e1QkQMgO81d633jhea2293NcQ5Nfke877QNdj94ggPc
 Sep 25 07:34:00 srv-web01 sshd[54478]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
 Sep 25 08:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 08:00:30 srv-web01 sshd[58890]: Connection closed by 203.0.113.45 port 35551 [preauth]
+Sep 25 08:00:30 srv-web01 sshd[21212]: Connection closed by 203.0.113.45 port 54628 [preauth]
 Sep 25 08:00:41 srv-web01 sshd[60903]: Failed password for admin from 203.0.113.77 port 41188 ssh2
 Sep 25 08:01:38 srv-web01 sshd[58042]: Failed password for alice from 203.0.113.77 port 57231 ssh2
 Sep 25 08:02:12 srv-web01 sshd[64104]: Failed password for bob from 203.0.113.77 port 48114 ssh2
@@ -81,7 +81,7 @@ Sep 25 08:16:13 srv-web01 sshd[33069]: Failed password for invalid user www from
 Sep 25 08:21:00 srv-web01 sshd[4550]: Accepted publickey for alice from 198.51.100.10 port 56658 ssh2: ED25519 SHA256:9Od08eOQ98312k1k7MgbaOPa2bbaiNhNO26PgMkc0jL
 Sep 25 08:21:00 srv-web01 sshd[45129]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 09:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 09:00:30 srv-web01 sshd[11196]: Connection closed by 203.0.113.45 port 34491 [preauth]
+Sep 25 09:00:30 srv-web01 sshd[15451]: Connection closed by 203.0.113.45 port 34256 [preauth]
 Sep 25 09:02:00 srv-web01 sshd[16306]: Failed password for bob from 198.51.100.11 port 45317 ssh2
 Sep 25 09:03:00 srv-web01 sshd[42533]: Accepted password for bob from 198.51.100.11 port 57683 ssh2
 Sep 25 09:03:00 srv-web01 sshd[47130]: pam_unix(sshd:session): session opened for user bob(uid=1000) by (uid=0)
@@ -90,7 +90,7 @@ Sep 25 09:08:00 srv-web01 sshd[33954]: pam_unix(sshd:session): session opened fo
 Sep 25 09:55:00 srv-web01 sshd[62063]: Accepted publickey for deploy from 198.51.100.12 port 42578 ssh2: ED25519 SHA256:e8cfQ1gd7gQQLPO8f2gk1ii3bM99bfh866je51Q90a5
 Sep 25 09:55:00 srv-web01 sshd[44475]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
 Sep 25 10:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 10:00:30 srv-web01 sshd[50442]: Connection closed by 203.0.113.45 port 37926 [preauth]
+Sep 25 10:00:30 srv-web01 sshd[40277]: Connection closed by 203.0.113.45 port 45719 [preauth]
 Sep 25 10:30:31 srv-web01 sshd[3144]: Invalid user test from 192.0.2.200 port 41934
 Sep 25 10:30:31 srv-web01 sshd[25283]: Failed password for invalid user test from 192.0.2.200 port 55387 ssh2
 Sep 25 10:30:49 srv-web01 sshd[30143]: Invalid user ubuntu from 192.0.2.200 port 47296
@@ -109,12 +109,13 @@ Sep 25 10:32:33 srv-web01 sshd[38000]: Invalid user user1 from 192.0.2.200 port 
 Sep 25 10:32:33 srv-web01 sshd[5496]: Failed password for invalid user user1 from 192.0.2.200 port 39492 ssh2
 Sep 25 10:42:00 srv-web01 sshd[64821]: Accepted publickey for alice from 198.51.100.10 port 46084 ssh2: ED25519 SHA256:8ddcOhQ2f0hN75cLha30h3OLac67O5Pddi7467fgc46
 Sep 25 10:42:00 srv-web01 sshd[41675]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
+Sep 25 11:00:00 srv-web01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt update
 Sep 25 11:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 11:00:30 srv-web01 sshd[4261]: Connection closed by 203.0.113.45 port 53013 [preauth]
+Sep 25 11:00:30 srv-web01 sshd[1503]: Connection closed by 203.0.113.45 port 34563 [preauth]
 Sep 25 11:29:00 srv-web01 sshd[29599]: Accepted publickey for deploy from 198.51.100.12 port 43046 ssh2: ED25519 SHA256:e86946a2i8464h4c66g5Mi4gafi69h0k9O8d9e8hcL2
 Sep 25 11:29:00 srv-web01 sshd[40728]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
 Sep 25 12:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 12:00:30 srv-web01 sshd[6346]: Connection closed by 203.0.113.45 port 54852 [preauth]
+Sep 25 12:00:30 srv-web01 sshd[20753]: Connection closed by 203.0.113.45 port 39466 [preauth]
 Sep 25 12:09:00 srv-web01 sshd[39429]: Failed password for admin from 192.0.2.10 port 39556 ssh2
 Sep 25 12:13:00 srv-web01 sshd[57996]: Failed password for admin from 192.0.2.10 port 59410 ssh2
 Sep 25 12:16:00 srv-web01 sshd[34780]: Accepted publickey for deploy from 198.51.100.12 port 42067 ssh2: ED25519 SHA256:d7fbLO4182fL87Q0d7N1i1Of0k3ePk5if4QiL1N4820
@@ -132,17 +133,23 @@ Sep 25 12:43:00 srv-web01 sshd[18391]: Failed password for admin from 192.0.2.15
 Sep 25 12:44:00 srv-web01 sshd[49609]: Failed password for admin from 192.0.2.16 port 36921 ssh2
 Sep 25 12:51:00 srv-web01 sshd[8448]: Failed password for admin from 192.0.2.16 port 50006 ssh2
 Sep 25 13:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 13:00:30 srv-web01 sshd[30039]: Connection closed by 203.0.113.45 port 41684 [preauth]
+Sep 25 13:00:30 srv-web01 sshd[51289]: Connection closed by 203.0.113.45 port 39689 [preauth]
 Sep 25 13:03:00 srv-web01 sshd[32108]: Accepted publickey for deploy from 198.51.100.12 port 60997 ssh2: ED25519 SHA256:Qc8gi4db9Q3M6P2kkd17664f41MP7ddMOPi3L57L7Me
 Sep 25 13:03:00 srv-web01 sshd[30495]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)
+Sep 25 13:20:01 srv-web01 sshd[40348]: Did not receive identification string from 192.0.2.50 port 42193
+Sep 25 13:20:04 srv-web01 sshd[7789]: Did not receive identification string from 192.0.2.50 port 44290
+Sep 25 13:20:06 srv-web01 sshd[44039]: Did not receive identification string from 192.0.2.50 port 37838
+Sep 25 13:20:10 srv-web01 sshd[56527]: Did not receive identification string from 192.0.2.50 port 40116
+Sep 25 13:20:11 srv-web01 sshd[56402]: Did not receive identification string from 192.0.2.50 port 44240
+Sep 25 13:20:14 srv-web01 sshd[50978]: Did not receive identification string from 192.0.2.50 port 36532
 Sep 25 13:50:00 srv-web01 sshd[11816]: Accepted publickey for bob from 198.51.100.11 port 56497 ssh2: ED25519 SHA256:35h3NgL2gj7cekefLiMb5k38a6PM8ik75O247NhNk14
 Sep 25 13:50:00 srv-web01 sshd[56083]: pam_unix(sshd:session): session opened for user bob(uid=1000) by (uid=0)
 Sep 25 14:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 14:00:30 srv-web01 sshd[28788]: Connection closed by 203.0.113.45 port 54458 [preauth]
+Sep 25 14:00:30 srv-web01 sshd[51080]: Connection closed by 203.0.113.45 port 37264 [preauth]
 Sep 25 14:37:00 srv-web01 sshd[8084]: Accepted publickey for bob from 198.51.100.11 port 42960 ssh2: ED25519 SHA256:79O7P0cL6ehiMj6h8L5M3b8gb8bag5QgMd8MgjQ924e
 Sep 25 14:37:00 srv-web01 sshd[38924]: pam_unix(sshd:session): session opened for user bob(uid=1000) by (uid=0)
 Sep 25 15:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 15:00:30 srv-web01 sshd[40785]: Connection closed by 203.0.113.45 port 48682 [preauth]
+Sep 25 15:00:30 srv-web01 sshd[19969]: Connection closed by 203.0.113.45 port 41140 [preauth]
 Sep 25 15:24:00 srv-web01 sshd[40998]: Accepted publickey for alice from 198.51.100.10 port 51440 ssh2: ED25519 SHA256:8P7k8fP5g1i144PbO0b0aLNLj7MeeO0Q73M5Pig8hM3
 Sep 25 15:24:00 srv-web01 sshd[44790]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 15:41:14 srv-web01 sshd[32211]: Failed password for backup from 203.0.113.99 port 34850 ssh2
@@ -155,23 +162,30 @@ Sep 25 15:42:19 srv-web01 sshd[43161]: Failed password for backup from 203.0.113
 Sep 25 15:42:22 srv-web01 sshd[32390]: Failed password for backup from 203.0.113.99 port 34761 ssh2
 Sep 25 15:42:29 srv-web01 sshd[22603]: Accepted password for backup from 203.0.113.99 port 51173 ssh2
 Sep 25 15:42:29 srv-web01 sshd[44909]: pam_unix(sshd:session): session opened for user backup(uid=1000) by (uid=0)
+Sep 25 15:44:22 srv-web01 sudo:   backup : user NOT in sudoers ; TTY=pts/3 ; PWD=/var/backups ; USER=root ; COMMAND=/bin/bash
+Sep 25 15:44:27 srv-web01 su[27922]: FAILED SU (to root) backup on pts/3
+Sep 25 15:44:36 srv-web01 su[58252]: FAILED SU (to root) backup on pts/3
+Sep 25 15:44:46 srv-web01 su[57891]: FAILED SU (to root) backup on pts/3
 Sep 25 16:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 16:00:30 srv-web01 sshd[28143]: Connection closed by 203.0.113.45 port 47252 [preauth]
+Sep 25 16:00:30 srv-web01 sshd[8863]: Connection closed by 203.0.113.45 port 43519 [preauth]
 Sep 25 16:11:00 srv-web01 sshd[19546]: Accepted publickey for bob from 198.51.100.11 port 52323 ssh2: ED25519 SHA256:jNiNjghQ6PNfgkOgM2Mahkg0jOj9OjMig2i381f2hP3
 Sep 25 16:11:00 srv-web01 sshd[7588]: pam_unix(sshd:session): session opened for user bob(uid=1000) by (uid=0)
 Sep 25 16:58:00 srv-web01 sshd[14617]: Accepted publickey for alice from 198.51.100.10 port 57761 ssh2: ED25519 SHA256:hji2dbbh803cahMj9g6dbNP1e48cgPLQQ3k7iPLPb8c
 Sep 25 16:58:00 srv-web01 sshd[41993]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 17:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 17:00:30 srv-web01 sshd[15127]: Connection closed by 203.0.113.45 port 41719 [preauth]
-Sep 25 17:05:00 srv-web01 sshd[21423]: Accepted publickey for root from 198.51.100.20 port 44893 ssh2: ED25519 SHA256:dj03629QjPf0gc5j3P4595Q0a85he1ija6Pkd0a3fLj
-Sep 25 17:05:00 srv-web01 sshd[48290]: pam_unix(sshd:session): session opened for user root(uid=1000) by (uid=0)
+Sep 25 17:00:30 srv-web01 sshd[33596]: Connection closed by 203.0.113.45 port 33021 [preauth]
+Sep 25 17:05:00 srv-web01 sshd[19562]: Accepted publickey for root from 198.51.100.20 port 36401 ssh2: ED25519 SHA256:hgLP3Q1PQ01ah37jed0b39cOkMeii8Q6e3bcLLQLfNj
+Sep 25 17:05:00 srv-web01 sshd[45447]: pam_unix(sshd:session): session opened for user root(uid=1000) by (uid=0)
 Sep 25 17:45:00 srv-web01 sshd[38696]: Accepted publickey for alice from 198.51.100.10 port 60965 ssh2: ED25519 SHA256:hcgOeL1Mahh6bgh4P4fdgehdb4Q57LMikhOLQ72Qag1
 Sep 25 17:45:00 srv-web01 sshd[39477]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 18:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 18:00:30 srv-web01 sshd[34577]: Connection closed by 203.0.113.45 port 57505 [preauth]
+Sep 25 18:00:30 srv-web01 sshd[29223]: Connection closed by 203.0.113.45 port 57246 [preauth]
+Sep 25 18:30:00 srv-web01 useradd[31337]: new user: name=sysupdate, UID=0, GID=0, home=/root, shell=/bin/bash, from=/dev/pts/2
+Sep 25 18:30:20 srv-web01 usermod[31338]: add 'deploy' to group 'sudo'
+Sep 25 18:30:20 srv-web01 usermod[31338]: add 'deploy' to shadow group 'sudo'
 Sep 25 18:32:00 srv-web01 sshd[2891]: Accepted publickey for alice from 198.51.100.10 port 36746 ssh2: ED25519 SHA256:91hb3M07eP0Ncji16i1h84OMii9kN90OLfj3Q3fO8L1
 Sep 25 18:32:00 srv-web01 sshd[64776]: pam_unix(sshd:session): session opened for user alice(uid=1000) by (uid=0)
 Sep 25 19:00:00 srv-web01 CRON[4242]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Sep 25 19:00:30 srv-web01 sshd[23621]: Connection closed by 203.0.113.45 port 36497 [preauth]
+Sep 25 19:00:30 srv-web01 sshd[9466]: Connection closed by 203.0.113.45 port 38525 [preauth]
 Sep 25 19:19:00 srv-web01 sshd[16650]: Accepted publickey for deploy from 198.51.100.12 port 55623 ssh2: ED25519 SHA256:QgeOOc97Md5N2Nh59gOk7N66h4L8N5hiP9NeOjOOMif
 Sep 25 19:19:00 srv-web01 sshd[38473]: pam_unix(sshd:session): session opened for user deploy(uid=1000) by (uid=0)

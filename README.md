@@ -119,6 +119,16 @@ Logs de SSH:
 | `password_spraying` | media | una IP prueba 5 cuentas existentes o más con pocos intentos en cada una | T1110.003 |
 | `root_login` | media | alguien entra directamente como root | T1078.003 |
 | `user_enumeration` | baja | una IP prueba 5 usuarios o más que no existen | |
+| `ssh_scan` | baja | una IP se conecta 5 veces o más al puerto 22 sin intentar entrar (escáner) | T1046 |
+
+Lo que pasa dentro de la máquina (también queda en `auth.log`):
+
+| Regla | Prioridad | Cuándo salta | MITRE ATT&CK |
+|---|---|---|---|
+| `account_created` | crítica si tiene UID 0, si no media | `useradd` crea una cuenta | T1136.001 |
+| `admin_group` | alta | alguien entra en `sudo`, `wheel`, `admin`, `root`, `docker` o `lxd` | T1098 |
+| `sudo_denied` | media | un usuario usa sudo sin tener permiso (`NOT in sudoers`) | T1548.003 |
+| `privilege_guessing` | media | un usuario falla 3 veces o más la contraseña de sudo o su | T1548.003 |
 
 Logs web (`--web`, formato combined de nginx/Apache):
 
@@ -138,7 +148,7 @@ están en `Config`, en `detectors.py`.
 
 ```text
 logsentinel/
-├── parser.py      auth.log -> eventos (fallo, acceso, usuario inválido)
+├── parser.py      auth.log -> eventos (SSH, sudo, su, cuentas y grupos)
 ├── detectors.py   reglas de SSH
 ├── webserver.py   parser y reglas de logs web
 ├── follow.py      el "tail -F" (con rotación)
