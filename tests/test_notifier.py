@@ -144,3 +144,59 @@ def test_control_characters_do_not_reach_the_message():
     msg = format_message(evil)
     assert "\x1b" not in msg and "\x07" not in msg
     assert "\\x1b[2J" in msg
+
+
+# --- reintentos (noviembre de 2026) -----------------------------------------
+
+
+class Flaky:
+    """Un notificador que falla `fails` veces antes de funcionar."""
+
+    name = "prueba"
+
+    def __init__(self, fails, retryable=True):
+        self.fails, self.retryable, self.calls = fails, retryable, 0
+
+    def send(self, finding, host=""):
+        self.calls += 1
+        if self.calls <= self.fails:
+            raise NotifyError("caído", retryable=self.retryable)
+
+
+def test_a_failed_alert_is_retried():
+    from logsentinel.notifier import deliver
+
+    waits = []
+    notifier = Flaky(fails=2)
+    deliver(notifier, FINDING, wait=waits.append)
+    assert notifier.calls == 3 and waits == [2, 5]
+
+
+def test_it_gives_up_after_three_tries():
+    from logsentinel.notifier import deliver
+
+    notifier = Flaky(fails=5)
+    with pytest.raises(NotifyError):
+        deliver(notifier, FINDING, wait=lambda s: None)
+    assert notifier.calls == 3
+
+
+def test_a_wrong_token_is_not_retried():
+    from logsentinel.notifier import deliver
+
+    notifier = Flaky(fails=5, retryable=False)
+    with pytest.raises(NotifyError):
+        deliver(notifier, FINDING, wait=lambda s: None)
+    assert notifier.calls == 1
+
+
+@pytest.mark.parametrize(("code", "retryable"), [(429, True), (502, True), (401, False), (404, False)])
+def test_which_http_errors_are_worth_retrying(code, retryable):
+    import urllib.error
+
+    def opener(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, code, "x", {}, None)
+
+    with pytest.raises(NotifyError) as exc:
+        WebhookNotifier("https://hooks.example/x").send(FINDING, opener=opener)
+    assert exc.value.retryable is retryable

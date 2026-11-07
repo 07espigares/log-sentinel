@@ -102,3 +102,17 @@ def test_repeated_message_with_absurd_count_is_capped():
         "[ Failed password for root from 203.0.113.5 port 22 ssh2]",
     )
     assert 1 <= len(events) <= 10_000
+
+
+def test_mixed_utc_offsets_keep_the_real_order():
+    # El cambio de hora de octubre: a las 03:00 (+02:00) se vuelve a las 02:00 (+01:00).
+    events = parse(
+        "2026-10-25T02:59:00+02:00 srv sshd[1]: Failed password for root from 203.0.113.5 port 1 ssh2",
+        "2026-10-25T02:01:00+01:00 srv sshd[1]: Failed password for root from 203.0.113.5 port 2 ssh2",
+        "2026-10-25T01:05:00Z srv sshd[1]: Failed password for root from 203.0.113.5 port 3 ssh2",
+    )
+    times = [e.timestamp for e in events]
+    assert times == sorted(times)
+    assert times[0] == datetime(2026, 10, 25, 2, 59)  # se queda en la hora del primer evento
+    assert times[1] == datetime(2026, 10, 25, 3, 1)
+    assert times[2] == datetime(2026, 10, 25, 3, 5)
