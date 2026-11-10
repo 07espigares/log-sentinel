@@ -113,9 +113,9 @@ Logs de SSH:
 
 | Regla | Prioridad | Cuándo salta | MITRE ATT&CK |
 |---|---|---|---|
-| `success_after_failures` | crítica | una IP falla 3 veces o más y después entra | T1078 |
-| `distributed_attack` | alta | 5 IPs o más fallan contra la misma cuenta | T1110 |
-| `brute_force` | media | 10 fallos desde una IP en 5 minutos | T1110.001 |
+| `success_after_failures` | crítica | una IP falla 3 veces o más y después entra (si entra bien con menos fallos, la cuenta vuelve a cero) | T1078 |
+| `distributed_attack` | alta | 5 IPs o más fallan contra la misma cuenta en un día | T1110 |
+| `brute_force` | media | 10 fallos desde una IP en 5 minutos. En un servidor que solo admite llaves cuentan los cortes antes de identificarse (`Connection closed by authenticating user ... [preauth]`), que es lo único que dejan los intentos | T1110.001 |
 | `password_spraying` | media | una IP prueba 5 cuentas existentes o más con pocos intentos en cada una | T1110.003 |
 | `root_login` | media | alguien entra directamente como root | T1078.003 |
 | `user_enumeration` | baja | una IP prueba 5 usuarios o más que no existen | |
@@ -127,7 +127,7 @@ Lo que pasa dentro de la máquina (también queda en `auth.log`):
 |---|---|---|---|
 | `account_created` | crítica si tiene UID 0, si no media | `useradd` crea una cuenta | T1136.001 |
 | `admin_group` | alta | alguien entra en `sudo`, `wheel`, `admin`, `root`, `docker` o `lxd` | T1098 |
-| `sudo_denied` | media | un usuario usa sudo sin tener permiso (`NOT in sudoers`) | T1548.003 |
+| `sudo_denied` | media | un usuario usa sudo sin tener permiso (`NOT in sudoers`) o pide una orden que no le dejan (`command not allowed`) | T1548.003 |
 | `privilege_guessing` | media | un usuario falla 3 veces o más la contraseña de sudo o su | T1548.003 |
 
 Logs web (`--web`, formato combined de nginx/Apache):
@@ -139,13 +139,14 @@ Logs web (`--web`, formato combined de nginx/Apache):
 | `ssrf` | alta | `?url=http://169.254.169.254/...` (credenciales de la nube), `gopher://` | T1190 |
 | `file_inclusion` | alta | `php://filter`, `data://text`, `expect://` | T1190 |
 | `ssti` | alta | `{{7*7}}`, `${7*7}`, `{{config}}`, `__class__` | T1190 |
-| `sqli` | alta | `UNION SELECT`, `' OR '1'='1`, `SLEEP(` | T1190 |
-| `path_traversal` | alta | `../../etc/passwd`, `/proc/self/environ` | T1083 |
+| `sqli` | alta | `UNION SELECT`, `' OR '1'='1`, `SLEEP(`, `AND 5231=5231`, `;DROP TABLE`, `ORDER BY 9--` | T1190 |
+| `path_traversal` | alta | `../../etc/passwd`, `/proc/self/environ`, `..;/` (Tomcat), `..%c0%af` | T1083 |
+| `exposed_file` | alta | el servidor responde 200 a `/.env`, `/.git/config`, `/.aws/`, `/.htpasswd`...: ya no es alguien probando, el archivo estaba ahí | T1552.001 |
 | `xss` | media | `<script`, `onerror=`, `javascript:` | T1059.007 |
-| `recon_scanner` | media | pide 3 rutas o más del tipo `/.env`, `/.git/`, `/wp-admin` | T1595.003 |
+| `recon_scanner` | media | pide 3 rutas o más del tipo `/.env`, `/.git/`, `/wp-admin` y le dan error (el dueño entrando en su panel no cuenta) | T1595.003 |
 | `scanner_tool` | media | el User-Agent es de sqlmap, Nikto, Nuclei, WPScan, gobuster, ffuf... | T1595.002 |
 | `web_login_bruteforce` | media | 10 POST o más a `/wp-login.php`, `/xmlrpc.php`, `/login`... en 5 minutos | T1110.001 |
-| `path_bruteforce` | baja | 20 rutas distintas o más que dan 404 | T1595 |
+| `path_bruteforce` | baja | 20 rutas distintas o más que dan 404 en 10 minutos | T1595 |
 
 En los ataques web, el detalle dice cuántas peticiones respondió el servidor con un
 200: no prueba que el ataque funcionara, pero son las primeras que hay que mirar.
@@ -185,6 +186,11 @@ Algunas cosas que me costó más resolver:
 - **El modo en vivo reutiliza los detectores.** No hay reglas especiales: se guardan
   los eventos de las últimas 2 horas, se vuelve a analizar cuando llegan líneas
   nuevas y se avisa solo de los hallazgos que no estaban antes.
+- **La IP es siempre la última de la línea.** El nombre de usuario lo elige quien se
+  conecta, y sshd lo escribe tal cual, con espacios: con
+  `ssh -l 'x from 10.0.0.1 port 22 ssh2' servidor` el log dice `...user x from 10.0.0.1
+  port 22 ssh2 from <la IP de verdad> port ...`. Si se leyera la primera, cualquiera
+  podría meter la IP de otro en el informe y en la lista de bloqueo.
 - **No fiarse de lo que hay en el log.** El nombre de usuario que se prueba por SSH
   o la URL de una petición los elige el atacante. Antes de sacarlos por pantalla se
   escapan los caracteres de control (si no, con secuencias ANSI podría borrar líneas

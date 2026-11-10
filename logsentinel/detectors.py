@@ -62,13 +62,15 @@ class Config:
     spray_min_users: int = 5  # usuarios distintos desde una IP
     spray_max_attempts_per_user: float = 3.0  # pocos intentos por usuario = spraying, no fuerza bruta
     enumeration_min_users: int = 5  # usuarios inexistentes distintos desde una IP
-    distributed_min_ips: int = 5  # IPs distintas contra la misma cuenta
+    distributed_min_ips: int = 5  # IPs distintas contra la misma cuenta...
+    distributed_window: timedelta = timedelta(days=1)  # ...en este tiempo (una botnet no tarda meses)
     failures_before_success: int = 3  # fallos previos que hacen sospechoso un acceso correcto
     scan_min_probes: int = 5  # conexiones al puerto 22 sin intentar entrar, desde una IP
     privilege_failures: int = 3  # contraseñas mal en sudo/su del mismo usuario
     # Logs web (ver webserver.py):
     web_scanner_min_sensitive: int = 3  # rutas sensibles distintas desde una IP -> escaneo
-    web_scanner_min_404: int = 20  # rutas distintas con 404 desde una IP -> barrido
+    web_scanner_min_404: int = 20  # rutas distintas con 404 desde una IP -> barrido...
+    web_scanner_window: timedelta = timedelta(minutes=10)  # ...en este tiempo
 
 
 @dataclass
@@ -110,10 +112,28 @@ def _max_in_window(times: list[datetime], window: timedelta) -> tuple[int, datet
     return best, best_start, best_end
 
 
+def _max_distinct_in_window(events: list[tuple[datetime, object]], window: timedelta) -> tuple[int, datetime, datetime]:
+    """Máximo de valores distintos dentro de cualquier ventana deslizante."""
+    counts: Counter = Counter()
+    best, span, start = 0, (events[0][0], events[0][0]), 0
+    for moment, value in events:
+        counts[value] += 1
+        while moment - events[start][0] > window:
+            old = events[start][1]
+            counts[old] -= 1
+            if not counts[old]:
+                del counts[old]
+            start += 1
+        if len(counts) > best:
+            best, span = len(counts), (events[start][0], moment)
+    return best, *span
+
+
 def detect_brute_force(events: list[AuthEvent], cfg: Config) -> list[Finding]:
     by_ip: dict[str, list[AuthEvent]] = defaultdict(list)
     for e in events:
-        if e.kind is EventKind.FAILED:
+        # PREAUTH: en un servidor de solo llaves, cada intento acaba en un corte antes de identificarse.
+        if e.kind in (EventKind.FAILED, EventKind.PREAUTH):
             by_ip[e.ip].append(e)
     findings = []
     for ip, fails in by_ip.items():
@@ -199,8 +219,12 @@ def detect_distributed_attack(events: list[AuthEvent], cfg: Config) -> list[Find
             by_user[e.user].append(e)
     findings = []
     for user, fails in by_user.items():
-        ips = {e.ip for e in fails}
-        if len(ips) >= cfg.distributed_min_ips:
+        # Dentro de un día: fallar la contraseña desde cinco sitios a lo largo de meses es una
+        # persona que viaja, no una botnet.
+        count, start, end = _max_distinct_in_window([(e.timestamp, e.ip) for e in fails], cfg.distributed_window)
+        if count >= cfg.distributed_min_ips:
+            fails = [e for e in fails if start <= e.timestamp <= end]
+            ips = {e.ip for e in fails}
             findings.append(
                 Finding(
                     Severity.HIGH,
@@ -228,7 +252,12 @@ def detect_success_after_failures(events: list[AuthEvent], cfg: Config) -> list[
         if e.kind is EventKind.FAILED:
             failures[key] += 1
             first_failure.setdefault(key, e.timestamp)
-        elif e.kind is EventKind.ACCEPTED and failures[key] >= cfg.failures_before_success:
+        elif e.kind is EventKind.ACCEPTED and failures[key] < cfg.failures_before_success:
+            # Entró bien con pocos fallos: la racha se acaba aquí. Si no, tres erratas en tres
+            # semanas distintas acababan sumando un "acceso tras 3 fallos".
+            failures.pop(key, None)
+            first_failure.pop(key, None)
+        elif e.kind is EventKind.ACCEPTED:
             findings.append(
                 Finding(
                     Severity.CRITICAL,

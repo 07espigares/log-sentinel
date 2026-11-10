@@ -36,11 +36,19 @@ class NotifyError(Exception):
         self.retryable = retryable
 
 
+MAX_TITLE, MAX_DETAILS = 300, 1200  # Discord rechaza los mensajes de más de 2000 caracteres
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def format_message(finding: Finding, host: str = "") -> str:
     lines = [
-        f"{ICON[finding.severity]} [{finding.severity.label}] log-sentinel" + (f" en {host}" if host else ""),
-        clean(finding.title),
-        clean(finding.details),
+        f"{ICON[finding.severity]} [{finding.severity.label}] log-sentinel"
+        + (f" en {_cut(host, 100)}" if host else ""),
+        _cut(clean(finding.title), MAX_TITLE),
+        _cut(clean(finding.details), MAX_DETAILS),
     ]
     if finding.mitre:
         lines.append(f"MITRE ATT&CK: {finding.mitre}")
