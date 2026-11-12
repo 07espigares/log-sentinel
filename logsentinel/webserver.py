@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import unquote_plus
 
-from .detectors import Config, Finding, Severity, _max_in_window
+from .detectors import Config, Finding, Severity, _max_distinct_in_window, _max_in_window
 from .parser import MONTHS
 
 LINE = re.compile(
@@ -30,8 +30,22 @@ LINE = re.compile(
 TIME = re.compile(r"(\d{2})/([A-Z][a-z]{2})/(\d{4}):(\d{2}):(\d{2}):(\d{2})")
 
 # ;id  |cat /etc/passwd  $(whoami)  `uname -a`  && wget ...
+# Dentro de $( ) o de comillas invertidas, cualquier orden. Detrás de ; | o &&, depende: las que
+# también son palabras o valores normales (cat, sleep, perl...) solo cuentan si llevan un argumento,
+# porque ?animales=perro|cat o ?emisoras=rock;sleep;jazz no son ataques, y ;id=5 es un parámetro.
 CMD_INJECTION = re.compile(
-    r"(?:[;|`]|&&|\$\()\s*(?:id|whoami|uname|cat|ls|pwd|wget|curl|nc|ncat|bash|sh|python[0-9.]*|perl|sleep|ping)\b"
+    r"(?:\$\(|`)\s*(?:id|whoami|uname|cat|ls|pwd|wget|curl|nc|ncat|bash|sh|python[0-9.]*|perl|sleep|ping)\b"
+    r"|(?:[;|]|&&)\s*(?:id|whoami|uname|pwd|ls)\b(?![=\w-])"
+    r"|(?:[;|]|&&)\s*(?:cat|wget|curl|nc|ncat|bash|sh|python[0-9.]*|perl|sleep|ping)\s+(?!http/\d)[^\s;|&]"
+)
+# and 5231=5231, or (8=8, and 2*3=6: las comprobaciones de verdadero/falso de sqlmap y compañía;
+# ;drop table (varias órdenes seguidas); order by 9-- (contar columnas); y la comilla que cierra
+# el texto seguida de un comentario.
+SQLI = re.compile(
+    r"\b(?:and|or)\s+\(?\s*\d+(?:\s*[*+-]\s*\d+)?\s*=\s*\d+"
+    r"|;\s*(?:drop|insert|update|delete|create|alter|truncate|exec)\s+\w"
+    r"|\border\s+by\s+\d+\s*(?:--|#|/\*)"
+    r"|'\s*--"
 )
 
 
@@ -92,13 +106,16 @@ SIGNATURES = {
             "load_file(",
             "into outfile",
             "xp_cmdshell",
+            "@@version",
         ),
+        SQLI,
     ),
     "path_traversal": Signature(
         Severity.HIGH,
         "Path traversal / lectura de ficheros",
         "T1083 File and Directory Discovery",
-        ("../", "..\\", "/etc/passwd", "/etc/shadow", "boot.ini", "/proc/self/environ", "\x00"),
+        # "..;/" engaña a Tomcat detrás de un proxy; "....//" queda en "../" si un filtro borra "../" una vez
+        ("../", "..\\", "..;/", "....//", "/etc/passwd", "/etc/shadow", "boot.ini", "/proc/self/environ", "\x00"),
     ),
     "rce": Signature(
         Severity.CRITICAL,
@@ -175,6 +192,10 @@ LOG4J_LOOKUP = re.compile(r"\$\{(?:(?:lower|upper):|[a-z]*:[^:{}$]*:-)([^{}$]*)\
 
 
 LOG_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\[\"\\]")
+# "/" , "." y "\\" escritos en UTF-8 con más bytes de la cuenta: no son válidos, pero algunos
+# servidores viejos los aceptan y así se cuela un "../" que ningún filtro ve.
+OVERLONG = re.compile(r"%c0%af|%c0%ae|%c1%9c|%e0%80%af", re.IGNORECASE)
+OVERLONG_CHARS = {"%c0%af": "/", "%c0%ae": ".", "%c1%9c": "\\", "%e0%80%af": "/"}
 
 
 def _resolve_log4j_lookups(text: str) -> str:
@@ -197,6 +218,7 @@ def normalize(text: str) -> str:
     # nginx escribe los bytes raros y las comillas como \xHH y Apache como \" en el log.
     text = LOG_ESCAPE.sub(lambda m: chr(int(m[1], 16)) if m[1] else m[0][1], text)
     for _ in range(3):
+        text = OVERLONG.sub(lambda m: OVERLONG_CHARS[m[0].lower()], text)
         decoded = unquote_plus(text)
         if decoded == text:
             break
@@ -367,8 +389,54 @@ def _login_bruteforce_findings(events: list[WebEvent], cfg: Config) -> list[Find
     return findings
 
 
+# De las rutas sensibles, las que son archivos con secretos dentro: nadie debería poder bajarlos.
+SECRET_FILES = ("/.env", "/.git/", "/.svn/", "/.aws/", "/.ssh/", "/.htpasswd", "/backup.sql")
+
+
 def _is_sensitive(path: str) -> bool:
     return any(s in path for s in SENSITIVE_PATHS)
+
+
+def _is_secret(path: str) -> bool:
+    return any(s in path for s in SECRET_FILES)
+
+
+def _exposed_findings(events: list[WebEvent]) -> list[Finding]:
+    """Un archivo con secretos (.env, .git/config...) que el servidor ha entregado con un 200.
+
+    Es lo más grave que puede salir de un escaneo: ya no es alguien probando, es que lo que
+    buscaba estaba ahí. Las webs que contestan 200 a cualquier ruta con la misma página (muchas
+    aplicaciones de una sola página) no cuentan: se reconocen porque todo mide lo mismo.
+    """
+    paths_by_size: dict[int, set[str]] = defaultdict(set)
+    for e in events:
+        if e.status == 200:
+            paths_by_size[e.size].add(e.path.split("?", 1)[0])
+    by_ip: dict[str, list[WebEvent]] = defaultdict(list)
+    for e in events:
+        path = normalize(e.path.split("?", 1)[0])
+        if e.status == 200 and e.size > 0 and _is_secret(path) and len(paths_by_size[e.size]) < 3:
+            by_ip[e.ip].append(e)
+    findings = []
+    for ip, evs in by_ip.items():
+        paths = sorted({e.path.split("?", 1)[0] for e in evs})
+        findings.append(
+            Finding(
+                Severity.HIGH,
+                "exposed_file",
+                f"Archivo con secretos entregado a {ip}",
+                evs[0].timestamp,
+                evs[-1].timestamp,
+                len(evs),
+                ip=ip,
+                mitre="T1552.001 Credentials In Files",
+                details=(
+                    f"el servidor respondió 200 a {', '.join(paths[:5])}. Comprueba qué hay ahí; si son "
+                    "contraseñas o claves, dalas por robadas y cámbialas"
+                ),
+            )
+        )
+    return findings
 
 
 def _scanner_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
@@ -380,9 +448,21 @@ def _scanner_findings(events: list[WebEvent], cfg: Config) -> list[Finding]:
     for ip, evs in by_ip.items():
         # normalize() una vez por petición, no una vez por cada ruta sensible
         # (sin la query: /wp-admin?x=1 y ?x=2 son la misma ruta, y ?q=/.env no es pedir /.env)
-        paths = {normalize(e.path.split("?", 1)[0]) for e in evs}
-        sensitive = {p for p in paths if _is_sensitive(p)}
-        not_found = {e.path for e in evs if e.status == 404}
+        # Un panel de administración que existe y contesta (el dueño entrando en su /wp-admin) no
+        # es un escaneo. Cuentan los que dan error, que es lo que se encuentra quien prueba a
+        # ciegas, y los archivos con secretos, que nadie tiene por qué pedir.
+        sensitive = set()
+        for e in evs:
+            path = normalize(e.path.split("?", 1)[0])
+            if _is_sensitive(path) and (e.status >= 400 or _is_secret(path)):
+                sensitive.add(path)
+        misses = [(e.timestamp, e.path) for e in evs if e.status == 404]
+        not_found: set[str] = set()
+        if misses:
+            # En pocos minutos: un buscador que va encontrando enlaces rotos durante días no es un escáner.
+            count, start, end = _max_distinct_in_window(misses, cfg.web_scanner_window)
+            if count >= cfg.web_scanner_min_404:
+                not_found = {path for moment, path in misses if start <= moment <= end}
         if len(sensitive) >= cfg.web_scanner_min_sensitive:
             sample = ", ".join(sorted(sensitive)[:5])
             findings.append(
@@ -420,6 +500,7 @@ def analyze_web(events: list[WebEvent], cfg: Config | None = None) -> WebAnalysi
     events = sorted(events, key=lambda e: e.timestamp)
     result = WebAnalysis(events)
     result.findings.extend(_signature_findings(events))
+    result.findings.extend(_exposed_findings(events))
     result.findings.extend(_scanner_findings(events, cfg))
     result.findings.extend(_tool_findings(events))
     result.findings.extend(_login_bruteforce_findings(events, cfg))

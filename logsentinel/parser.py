@@ -37,11 +37,23 @@ ISO_LINE = re.compile(
 SSH_PROCESSES = {"sshd", "sshd-session"}
 IP = r"(?P<ip>[0-9a-fA-F.:]+)"
 
+# El nombre de usuario lo elige quien se conecta y sshd lo escribe tal cual, con espacios y todo:
+# con `ssh -l 'x from 10.0.0.1 port 22 ssh2' servidor` el log dice "...user x from 10.0.0.1 port 22
+# ssh2 from <la IP de verdad> port ...". Por eso el usuario se lee con avaricia (.*) y la IP es
+# siempre la ÚLTIMA de la línea, que es la que pone sshd. Si no, cualquiera podría meter la IP de
+# otro en el informe y en la lista de bloqueo.
 FAILED = re.compile(
-    r"^Failed (?P<method>\S+) for (?P<invalid>invalid user )?(?P<user>\S*) from (?P<ip>[0-9a-fA-F.:]+) port \d+"
+    r"^Failed (?P<method>\S+) for (?P<invalid>invalid user )?(?P<user>.*) from (?P<ip>[0-9a-fA-F.:]+) port \d+"
+    r"(?: ssh\d?)?(?:: .*)?$"
 )
 ACCEPTED = re.compile(r"^Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<ip>[0-9a-fA-F.:]+) port \d+")
-INVALID_USER = re.compile(r"^Invalid user (?P<user>\S*) from (?P<ip>[0-9a-fA-F.:]+)")
+INVALID_USER = re.compile(r"^Invalid user (?P<user>.*) from (?P<ip>[0-9a-fA-F.:]+)(?: port \d+)?$")
+# Un servidor que solo admite llaves no escribe "Failed password": el que prueba contraseñas se
+# encuentra con que no se las piden y corta. Lo único que queda es esta línea.
+PREAUTH = re.compile(
+    r"^(?:Connection (?:closed|reset) by|Disconnected from) (?P<kind>authenticating|invalid) user (?P<user>.*) "
+    r"(?P<ip>[0-9a-fA-F.:]+) port \d+(?: \[preauth\])?$"
+)
 # rsyslog con "$RepeatedMsgReduction on" (lo trae Ubuntu) junta los mensajes idénticos seguidos:
 #   message repeated 4 times: [ Failed password for root from 203.0.113.5 port 22 ssh2]
 REPEATED = re.compile(r"^message repeated (?P<n>\d{1,12}) times: \[ ?(?P<msg>.*?) ?\]$")
@@ -75,6 +87,7 @@ MAX_REPEAT = 10_000
 
 class EventKind(str, Enum):
     FAILED = "failed"
+    PREAUTH = "preauth"  # cortó antes de identificarse (lo normal contra un servidor de solo llaves)
     ACCEPTED = "accepted"
     INVALID_USER = "invalid_user"
     PROBE = "probe"  # alguien se conecta al puerto de SSH sin intentar entrar
@@ -137,7 +150,7 @@ def _parse_sudo(timestamp: datetime, host: str, msg: str) -> AuthEvent | None:
     if not m:
         return None
     user, rest = m["user"], m["rest"]
-    if rest.startswith("user NOT in sudoers"):
+    if rest.startswith(("user NOT in sudoers", "command not allowed", "user NOT authorized on host")):
         return AuthEvent(timestamp, host, EventKind.SUDO_DENIED, user, "", extra=_sudo_command(rest))
     if f := SUDO_FAILED.match(rest):
         return AuthEvent(timestamp, host, EventKind.SUDO_FAILED, user, "", extra=_sudo_command(rest), count=int(f["n"]))
@@ -174,6 +187,10 @@ def parse_message(timestamp: datetime, host: str, msg: str) -> AuthEvent | None:
         return AuthEvent(timestamp, host, EventKind.ACCEPTED, m["user"], m["ip"], m["method"])
     if m := INVALID_USER.match(msg):
         return AuthEvent(timestamp, host, EventKind.INVALID_USER, m["user"], m["ip"], invalid_user=True)
+    if m := PREAUTH.match(msg):
+        return AuthEvent(
+            timestamp, host, EventKind.PREAUTH, m["user"], m["ip"], "preauth", invalid_user=m["kind"] == "invalid"
+        )
     for regex in PROBES:
         if m := regex.match(msg):
             return AuthEvent(timestamp, host, EventKind.PROBE, "", m["ip"])
